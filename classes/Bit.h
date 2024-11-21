@@ -46,12 +46,12 @@ public:
 	bool friendly();
 	bool unfriendly();
 	// game defined game tags
-	const int gameTag() { return _gameTag; };
-	void setGameTag(int tag) { _gameTag = tag; };
+	int gameTag() const { return _gameTag; }
+	void setGameTag(int tag) { _gameTag = tag; }
 	// move to a position
 	void moveTo(const ImVec2 &point);
 	void update();
-	void setOpacity(float opacity){};
+	void setOpacity(float opacity) {};
 	bool getMoving() { return _moving; };
 
 private:

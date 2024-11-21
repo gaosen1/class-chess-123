@@ -1,6 +1,7 @@
 
 #include "Bit.h"
 #include "BitHolder.h"
+#include <cmath>
 
 Bit::~Bit()
 {
@@ -92,7 +93,7 @@ void Bit::update()
 	}
 	ImVec2 pos = getPosition();
 	ImVec2 delta = ImVec2(_destinationPosition.x - pos.x, _destinationPosition.y - pos.y);
-	if (fabs(delta.x) >= 0.1f || fabs(delta.y) > 0.1f)
+	if (std::fabs(delta.x) >= 0.1f || std::fabs(delta.y) > 0.1f)
 	{
 		ImVec2 newPosition = ImVec2(pos.x + _destinationStep.x, pos.y + _destinationStep.y);
 		setPosition(newPosition);
