@@ -397,7 +397,6 @@ std::vector<std::pair<int, int>> Chess::getLegalMoves(const Bit &piece, int srcR
         }
         break;
     }
-
     case KNIGHT:
     {
         const int knightMoves[8][2] = {{-2, -1}, {-2, 1}, {-1, -2}, {-1, 2}, {1, -2}, {1, 2}, {2, -1}, {2, 1}};
@@ -416,8 +415,136 @@ std::vector<std::pair<int, int>> Chess::getLegalMoves(const Bit &piece, int srcR
         }
         break;
     }
+    case BISHOP:
+    {
+        // 象的移动 - 斜线方向
+        const int directions[4][2] = {{-1, -1}, {-1, 1}, {1, -1}, {1, 1}};
+        for (auto &dir : directions)
+        {
+            for (int i = 1; i < 8; i++)
+            {
+                int newRow = srcRow + dir[0] * i;
+                int newCol = srcCol + dir[1] * i;
+                if (!isValidPosition(newRow, newCol))
+                    break;
 
-        // 其他棋子的移动规则类似实现...
+                Bit *targetPiece = _grid[newRow][newCol].bit();
+                if (!targetPiece)
+                {
+                    moves.push_back({newRow, newCol});
+                }
+                else
+                {
+                    if (((targetPiece->gameTag() & 128) != 0) != isBlack)
+                    {
+                        moves.push_back({newRow, newCol}); // 可以吃子
+                    }
+                    break; // 无论是否可以吃子，都不能继续前进
+                }
+            }
+        }
+        break;
+    }
+    case ROOK:
+    {
+        // 车的移动 - 直线方向
+        const int directions[4][2] = {{-1, 0}, {1, 0}, {0, -1}, {0, 1}};
+        for (auto &dir : directions)
+        {
+            for (int i = 1; i < 8; i++)
+            {
+                int newRow = srcRow + dir[0] * i;
+                int newCol = srcCol + dir[1] * i;
+                if (!isValidPosition(newRow, newCol))
+                    break;
+
+                Bit *targetPiece = _grid[newRow][newCol].bit();
+                if (!targetPiece)
+                {
+                    moves.push_back({newRow, newCol});
+                }
+                else
+                {
+                    if (((targetPiece->gameTag() & 128) != 0) != isBlack)
+                    {
+                        moves.push_back({newRow, newCol}); // 可以吃子
+                    }
+                    break; // 无论是否可以吃子，都不能继续前进
+                }
+            }
+        }
+        break;
+    }
+    case QUEEN:
+    {
+        // 后的移动 - 组合象和车的移动
+        const int directions[8][2] = {
+            {-1, -1}, {-1, 1}, {1, -1}, {1, 1}, // 斜线方向(象)
+            {-1, 0},
+            {1, 0},
+            {0, -1},
+            {0, 1} // 直线方向(车)
+        };
+        for (auto &dir : directions)
+        {
+            for (int i = 1; i < 8; i++)
+            {
+                int newRow = srcRow + dir[0] * i;
+                int newCol = srcCol + dir[1] * i;
+                if (!isValidPosition(newRow, newCol))
+                    break;
+
+                Bit *targetPiece = _grid[newRow][newCol].bit();
+                if (!targetPiece)
+                {
+                    moves.push_back({newRow, newCol});
+                }
+                else
+                {
+                    if (((targetPiece->gameTag() & 128) != 0) != isBlack)
+                    {
+                        moves.push_back({newRow, newCol}); // 可以吃子
+                    }
+                    break; // 无论是否可以吃子，都不能继续前进
+                }
+            }
+        }
+        break;
+    }
+    case KING:
+    {
+        // 王的移动 - 周围一格
+        const int directions[8][2] = {
+            {-1, -1}, {-1, 0}, {-1, 1}, {0, -1}, {0, 1}, {1, -1}, {1, 0}, {1, 1}};
+        for (auto &dir : directions)
+        {
+            int newRow = srcRow + dir[0];
+            int newCol = srcCol + dir[1];
+            if (!isValidPosition(newRow, newCol))
+                continue;
+
+            Bit *targetPiece = _grid[newRow][newCol].bit();
+            if (!targetPiece || ((targetPiece->gameTag() & 128) != 0) != isBlack)
+            {
+                // 检查移动后是否会被将军
+                bool isSafe = true;
+                // TODO: 实现检查目标格子是否安全的逻辑
+                if (isSafe)
+                {
+                    moves.push_back({newRow, newCol});
+                }
+            }
+        }
+
+        // TODO: 实现王车易位规则
+        // 需要检查:
+        // 1. 王和车都未移动过
+        // 2. 王不处于将军状态
+        // 3. 移动路径上无棋子
+        // 4. 移动路径上的格子不受对方攻击
+
+        break;
+    }
     }
 
     return moves;
