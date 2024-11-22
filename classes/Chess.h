@@ -64,6 +64,8 @@ public:
     bool isCheckmate(bool blackKing) const;
     void promotePawn(int row, int col);
 
+    void drawFrame() override;
+
 private:
     Bit *PieceForPlayer(const int playerNumber, ChessPiece piece);
     const char bitToPieceNotation(int row, int column) const;
@@ -118,5 +120,4 @@ private:
 
     // 添加 renderGameStatus 函数声明
     void renderGameStatus();
-    void render() override; // 添加 render 函数声明
 };

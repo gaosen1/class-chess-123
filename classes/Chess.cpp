@@ -76,6 +76,12 @@ bool Chess::actionForEmptyHolder(BitHolder &holder)
 
 bool Chess::canBitMoveFrom(Bit &bit, BitHolder &src)
 {
+    bool isBlack = (bit.gameTag() & 128) != 0;
+    if (isBlack == _isWhiteTurn) // 如果不是当前玩家的回合
+    {
+        return false;
+    }
+
     if (!isCurrentPlayersPiece(bit))
     {
         return false;
@@ -86,6 +92,12 @@ bool Chess::canBitMoveFrom(Bit &bit, BitHolder &src)
 
 bool Chess::canBitMoveFromTo(Bit &bit, BitHolder &src, BitHolder &dst)
 {
+    bool isBlack = (bit.gameTag() & 128) != 0;
+    if (isBlack == _isWhiteTurn) // 如果不是当前玩家的回合
+    {
+        return false;
+    }
+
     if (!isCurrentPlayersPiece(bit))
     {
         return false;
@@ -120,8 +132,6 @@ bool Chess::canBitMoveFromTo(Bit &bit, BitHolder &src, BitHolder &dst)
 
 void Chess::bitMovedFromTo(Bit &bit, BitHolder &src, BitHolder &dst)
 {
-    printf("Moving piece from src to dst\n");
-
     // 获取源位置和目标位置
     int srcRow = -1, srcCol = -1, dstRow = -1, dstCol = -1;
     for (int row = 0; row < 8; row++)
@@ -140,8 +150,6 @@ void Chess::bitMovedFromTo(Bit &bit, BitHolder &src, BitHolder &dst)
             }
         }
     }
-
-    printf("Move from [%d,%d] to [%d,%d]\n", srcRow, srcCol, dstRow, dstCol);
 
     // 更新王车易位权限
     updateCastlingRights(bit, srcRow, srcCol);
@@ -171,21 +179,43 @@ void Chess::bitMovedFromTo(Bit &bit, BitHolder &src, BitHolder &dst)
     Bit *capturedPiece = dst.bit();
     if (capturedPiece)
     {
-        _gameStatus.showCapturePopup = true;
-        _gameStatus.popupTimer = _gameStatus.POPUP_DURATION;
         bool isBlack = (bit.gameTag() & 128) != 0;
         const char *pieceNames[] = {"", "Pawn", "Knight", "Bishop", "Rook", "Queen", "King"};
         int capturedType = capturedPiece->gameTag() & 127;
+
+        // 检查是否吃掉了王
+        if (capturedType == KING)
+        {
+            // 先完成移动
+            Game::bitMovedFromTo(bit, src, dst);
+
+            // 设置游戏结束状态
+            _gameStatus.showGameEndPopup = true;
+            _gameStatus.statusMessage = std::string(isBlack ? "Black" : "White") +
+                                        " wins by capturing the " +
+                                        std::string(!isBlack ? "Black" : "White") +
+                                        " King!";
+
+            // 强制显示弹窗
+            renderGameStatus();
+
+            // 切换回合并返回
+            _isWhiteTurn = !_isWhiteTurn;
+            return;
+        }
+
+        // 普通吃子提示
+        _gameStatus.showCapturePopup = true;
+        _gameStatus.popupTimer = _gameStatus.POPUP_DURATION;
         _gameStatus.statusMessage = std::string(isBlack ? "Black" : "White") +
                                     " captured " +
                                     std::string(!isBlack ? "Black" : "White") +
                                     "'s " + pieceNames[capturedType];
     }
 
-    printf("Completing move\n");
     Game::bitMovedFromTo(bit, src, dst);
-    _isWhiteTurn = !_isWhiteTurn;
-    printf("Turn changed to %s\n", _isWhiteTurn ? "White" : "Black");
+    _isWhiteTurn = !_isWhiteTurn; // 切换回合
+    // printf("Turn changed to %s\n", _isWhiteTurn ? "White" : "Black");
 
     // 检查将军和将死状态
     bool opponentIsBlack = !_isWhiteTurn;
@@ -341,6 +371,19 @@ bool Chess::isValidPosition(int row, int col) const
 
 void Chess::setupInitialPosition()
 {
+    // 首先清除所有现有的棋子
+    for (int row = 0; row < 8; row++)
+    {
+        for (int col = 0; col < 8; col++)
+        {
+            if (_grid[row][col].bit())
+            {
+                _grid[row][col].destroyBit(); // 删除棋子对象
+            }
+            _grid[row][col].setBit(nullptr);
+        }
+    }
+
     // 放置白方棋子
     // 第一排
     placePiece(0, 0, ROOK, WHITE);
@@ -407,7 +450,7 @@ bool Chess::validateBoardState() const
                 {
                     if ((isBlack && row == 0) || (!isBlack && row == 7))
                     {
-                        return false; // 兵不能在第一行或最后一行
+                        return false; // 兵不能在一行或最后一行
                     }
                 }
             }
@@ -594,7 +637,7 @@ std::vector<std::pair<int, int>> Chess::getBasicLegalMoves(const Bit &piece, int
                     {
                         moves.push_back({newRow, newCol}); // 可以吃子
                     }
-                    break; // 无论是否可以吃子，都不能继续前进
+                    break; // 无论是否可以吃子，都不继续前进
                 }
             }
         }
@@ -623,7 +666,7 @@ std::vector<std::pair<int, int>> Chess::getBasicLegalMoves(const Bit &piece, int
             // 检查是否会与对方的王相邻
             auto [enemyKingRow, enemyKingCol] = getKingPosition(!isBlack);
             if (abs(enemyKingRow - newRow) <= 1 && abs(enemyKingCol - newCol) <= 1)
-                continue; // 不允许两个王相邻
+                continue; // 不允许两个王相
 
             moves.push_back({newRow, newCol});
         }
@@ -678,7 +721,6 @@ bool Chess::isSquareUnderAttack(int row, int col, bool byBlack, bool checkKing) 
 
 std::vector<std::pair<int, int>> Chess::getLegalMoves(const Bit &piece, int srcRow, int srcCol) const
 {
-    printf("Getting legal moves for piece at [%d,%d]\n", srcRow, srcCol);
     bool isBlack = (piece.gameTag() & 128) != 0;
     int pieceType = piece.gameTag() & 127;
 
@@ -887,7 +929,7 @@ bool Chess::isCheckmate(bool blackKing) const
             if (!piece)
                 continue;
 
-            // 只检查己方棋子
+            // 只检查己方棋
             if (((piece->gameTag() & 128) != 0) != blackKing)
                 continue;
 
@@ -919,6 +961,38 @@ void Chess::promotePawn(int row, int col)
     }
 }
 
+void Chess::drawFrame()
+{
+    // 创建主窗口
+    ImGui::Begin("Chess Game", nullptr,
+                 ImGuiWindowFlags_NoMove |
+                     ImGuiWindowFlags_NoResize |
+                     ImGuiWindowFlags_NoCollapse);
+
+    // 调用基类的 drawFrame 来渲染棋盘
+    Game::drawFrame();
+
+    // 在棋盘右侧添加控制按钮
+    ImGui::SameLine(pieceSize * 9); // 在棋盘右侧留出空间
+    ImGui::BeginGroup();            // 开始一个组，让按钮垂直排列
+
+    // 添加测试按钮
+    if (ImGui::Button("Test End Game", ImVec2(120, 30)))
+    {
+        _gameStatus.showGameEndPopup = true;
+        _gameStatus.statusMessage = "Game Over (Test)";
+    }
+
+    ImGui::EndGroup();
+    ImGui::End();
+
+    // 如果游戏已经结束，显示弹窗
+    if (_gameStatus.showGameEndPopup)
+    {
+        renderGameStatus();
+    }
+}
+
 void Chess::renderGameStatus()
 {
     // 更新弹窗计时器
@@ -935,16 +1009,68 @@ void Chess::renderGameStatus()
     // 游戏结束弹窗
     if (_gameStatus.showGameEndPopup)
     {
-        ImGui::OpenPopup("Game Over");
-        ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
-        if (ImGui::BeginPopupModal("Game Over", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+        // 确保弹窗总是打开
+        if (!ImGui::IsPopupOpen("Game Over"))
         {
-            ImGui::Text("%s", _gameStatus.statusMessage.c_str());
-            if (ImGui::Button("OK"))
+            ImGui::OpenPopup("Game Over");
+        }
+
+        ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+        ImGui::SetNextWindowPos(center, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+
+        ImGuiWindowFlags flags = ImGuiWindowFlags_AlwaysAutoResize |
+                                 ImGuiWindowFlags_NoMove |
+                                 ImGuiWindowFlags_NoSavedSettings |
+                                 ImGuiWindowFlags_Modal;
+
+        if (ImGui::BeginPopupModal("Game Over", nullptr, flags))
+        {
+            // 显示胜利信息
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.843f, 0.0f, 1.0f)); // 金色文字
+            ImGui::SetWindowFontScale(1.5f);
+            ImGui::TextWrapped("%s", _gameStatus.statusMessage.c_str());
+            ImGui::SetWindowFontScale(1.0f);
+            ImGui::PopStyleColor();
+
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::Spacing();
+
+            // 显示游戏统计信息
+            ImGui::Text("Game Statistics:");
+            ImGui::Text("Total Moves: %d", _gameOptions.currentTurnNo);
+            // 可以添加更多统计信息，如游戏时长、吃子数等
+
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::Spacing();
+
+            // 按钮居中
+            float buttonWidth = 120.0f;
+            float windowWidth = ImGui::GetWindowSize().x;
+            float buttonsStartX = (windowWidth - buttonWidth * 2.0f - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
+
+            ImGui::SetCursorPosX(buttonsStartX);
+
+            if (ImGui::Button("New Game", ImVec2(buttonWidth, 0)))
+            {
+                // 重置游戏
+                _gameStatus.showGameEndPopup = false;
+                _isWhiteTurn = true;
+                _castlingRights = CastlingRights(); // 重置王车易位权限
+                setupInitialPosition();             // 重新设置棋盘
+                ImGui::CloseCurrentPopup();
+            }
+
+            ImGui::SameLine();
+
+            if (ImGui::Button("Exit", ImVec2(buttonWidth, 0)))
             {
                 _gameStatus.showGameEndPopup = false;
                 ImGui::CloseCurrentPopup();
+                // 可以添加退出游戏的逻辑
             }
+
             ImGui::EndPopup();
         }
     }
@@ -961,7 +1087,9 @@ void Chess::renderGameStatus()
                              ImGuiWindowFlags_NoSavedSettings |
                              ImGuiWindowFlags_NoMove))
         {
-            ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "Check!");
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.0f, 0.0f, 1.0f));
+            ImGui::Text("Check!");
+            ImGui::PopStyleColor();
         }
         ImGui::End();
     }
@@ -978,14 +1106,8 @@ void Chess::renderGameStatus()
                              ImGuiWindowFlags_NoSavedSettings |
                              ImGuiWindowFlags_NoMove))
         {
-            ImGui::Text("%s", _gameStatus.statusMessage.c_str());
+            ImGui::TextColored(ImVec4(0.0f, 0.8f, 0.0f, 1.0f), "%s", _gameStatus.statusMessage.c_str());
         }
         ImGui::End();
     }
-}
-
-void Chess::render()
-{
-    Game::render();     // 调用基类的 render
-    renderGameStatus(); // 渲染游戏状态提示
 }
