@@ -1058,18 +1058,10 @@ void Chess::promotePawn(int row, int col)
 
 void Chess::drawFrame()
 {
-    // 创建主窗口
-    ImGui::Begin("Chess Game", nullptr,
-                 ImGuiWindowFlags_NoMove |
-                     ImGuiWindowFlags_NoResize |
-                     ImGuiWindowFlags_NoCollapse);
-
-    // 调用基类的 drawFrame 来渲染棋盘
+    // 直接调用基类的 drawFrame 来渲染棋盘
     Game::drawFrame();
 
-    ImGui::End();
-
-    // 如果游戏已经结束，显示弹窗
+    // 只保留游戏结束弹窗的渲染
     if (_gameStatus.showGameEndPopup)
     {
         renderGameStatus();

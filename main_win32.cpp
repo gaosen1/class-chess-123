@@ -173,7 +173,7 @@ int main(int, char **)
     bool done = false;
     while (!done)
     {
-        // Poll and handle messages (inputs, window resize, etc.)
+        // Poll and handle messages
         MSG msg;
         while (::PeekMessage(&msg, NULL, 0U, 0U, PM_REMOVE))
         {
@@ -190,41 +190,36 @@ int main(int, char **)
         ImGui_ImplWin32_NewFrame();
         ImGui::NewFrame();
 
-        // 创建一个固定大小的窗口来包含游戏内容
-        ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
-        ImGui::SetNextWindowSize(ImVec2((float)g_Width, (float)g_Height), ImGuiCond_Always);
-        ImGui::Begin("Game Window", nullptr,
-                     ImGuiWindowFlags_NoTitleBar |
-                         ImGuiWindowFlags_NoResize |
-                         ImGuiWindowFlags_NoMove |
-                         ImGuiWindowFlags_NoScrollbar |
-                         ImGuiWindowFlags_NoBringToFrontOnFocus |
-                         ImGuiWindowFlags_NoNavFocus | // 添加这个标志
-                         ImGuiWindowFlags_NoBackground);
+        // 清除背景
+        glViewport(0, 0, g_Width, g_Height);
+        glClearColor(0.45f, 0.55f, 0.60f, 1.00f);
+        glClear(GL_COLOR_BUFFER_BIT);
 
+        // 创建全屏 DockSpace
+        ImGuiViewport *viewport = ImGui::GetMainViewport();
+        ImGui::SetNextWindowPos(viewport->Pos);
+        ImGui::SetNextWindowSize(viewport->Size);
+        ImGui::SetNextWindowViewport(viewport->ID);
+
+        ImGuiWindowFlags host_window_flags = 0;
+        host_window_flags |= ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoDocking;
+        host_window_flags |= ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus;
+        host_window_flags |= ImGuiWindowFlags_NoBackground;
+
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+
+        ImGui::Begin("MainDockSpace", nullptr, host_window_flags);
+        ImGui::PopStyleVar(3);
+
+        // 渲染游戏内容
         ClassGame::RenderGame();
 
         ImGui::End();
 
         // Rendering
         ImGui::Render();
-
-        // 保存当前的 OpenGL 上下文
-        HGLRC current_context = wglGetCurrentContext();
-        HDC current_dc = wglGetCurrentDC();
-
-        // 确保使用正确的上下文
-        wglMakeCurrent(g_MainWindow.hDC, g_hRC);
-
-        glViewport(0, 0, g_Width, g_Height);
-        glClearColor(clear_color.x, clear_color.y, clear_color.z, clear_color.w);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // 同时清除深度缓冲
-
-        // 启用深度测试
-        glEnable(GL_DEPTH_TEST);
-        glDepthFunc(GL_LEQUAL);
-
-        // 渲染 ImGui 绘制数据
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
         // Update and Render additional Platform Windows
@@ -232,18 +227,13 @@ int main(int, char **)
         {
             ImGui::UpdatePlatformWindows();
             ImGui::RenderPlatformWindowsDefault();
+            wglMakeCurrent(g_MainWindow.hDC, g_hRC);
         }
-
-        // 恢复原始的 OpenGL 上下文
-        wglMakeCurrent(current_dc, current_context);
-
-        // 禁用深度测试
-        glDisable(GL_DEPTH_TEST);
 
         // 交换缓冲区
         ::SwapBuffers(g_MainWindow.hDC);
 
-        // 使用更精确的帧率控制
+        // 帧率控制
         static LARGE_INTEGER frequency;
         static LARGE_INTEGER last = {0};
         static LARGE_INTEGER now;
