@@ -601,11 +601,11 @@ void Chess::updateAI()
             return;
         }
 
-        // 思考延时（改为0.8秒）
+        // 思考延时（0.8秒）
         auto currentTime = std::chrono::steady_clock::now();
         auto elapsedTime = std::chrono::duration_cast<std::chrono::milliseconds>(currentTime - startTime).count();
 
-        if (elapsedTime < 800) // 缩短到0.8秒
+        if (elapsedTime < 800)
         {
             return; // 继续"思考"
         }
@@ -623,6 +623,21 @@ void Chess::updateAI()
             {
                 BitHolder &src = _grid[fromRow][fromCol];
                 BitHolder &dst = _grid[toRow][toCol];
+
+                // 检查目标位置是否有王
+                Bit *targetPiece = _grid[toRow][toCol].bit();
+                if (targetPiece && (targetPiece->gameTag() & 127) == KING)
+                {
+                    bool capturedBlackKing = (targetPiece->gameTag() & 128) != 0;
+                    printf("\n=== Game Over - King Captured by AI ===\n");
+                    printf("%s wins by capturing the %s king!\n",
+                           capturedBlackKing ? "White" : "Black",
+                           capturedBlackKing ? "Black" : "White");
+
+                    _gameStatus.showGameEndPopup = true;
+                    _gameStatus.statusMessage = std::string(capturedBlackKing ? "White" : "Black") +
+                                                " wins by capturing the king!";
+                }
 
                 printf("AI Move: From [%d,%d] To [%d,%d]\n", fromRow, fromCol, toRow, toCol);
 
@@ -1014,7 +1029,7 @@ std::vector<std::pair<int, int>> Chess::getBasicLegalMoves(const Bit &piece, int
                     moves.push_back({newRow, newCol});
                 }
 
-                // 检查吃过路兵
+                // 检查吃过路兵的情况
                 if (_enPassantState.available)
                 {
                     int expectedRow = isBlack ? 3 : 4; // 吃过路兵的兵应该在的行
@@ -1029,8 +1044,14 @@ std::vector<std::pair<int, int>> Chess::getBasicLegalMoves(const Bit &piece, int
                             {
                                 // 添加吃过路兵的目标位置
                                 moves.push_back({isBlack ? 2 : 5, newCol});
-                                printf("En passant move available from [%d,%d] to [%d,%d]\n",
-                                       srcRow, srcCol, isBlack ? 2 : 5, newCol);
+                                // 只打印一次调试信息，避免重复
+                                static bool printedEnPassant = false;
+                                if (!printedEnPassant)
+                                {
+                                    printf("En passant move available from [%d,%d] to [%d,%d]\n",
+                                           srcRow, srcCol, isBlack ? 2 : 5, newCol);
+                                    printedEnPassant = true;
+                                }
                             }
                         }
                     }
