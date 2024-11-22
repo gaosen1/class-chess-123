@@ -118,10 +118,33 @@ void Game::scanForMouse()
 #if defined(UCI_INTERFACE)
 	return;
 #endif
-	ImVec2 mousePos = ImGui::GetMousePos();
-	mousePos.x -= ImGui::GetWindowPos().x;
-	mousePos.y -= ImGui::GetWindowPos().y;
 
+	// 获取原始鼠标位置（相对于屏幕）
+	ImVec2 mousePos = ImGui::GetMousePos();
+
+	// 获取窗口位置
+	ImVec2 windowPos = ImGui::GetWindowPos();
+
+	// 计算相对于窗口的鼠标位置
+	mousePos.x -= windowPos.x;
+	mousePos.y -= windowPos.y;
+
+	// 检查是否点击了重置按钮
+	ImVec2 buttonPos(10, 10);
+	ImVec2 buttonSize(100, 30);
+	bool mouseOverButton =
+			mousePos.x >= buttonPos.x &&
+			mousePos.x <= (buttonPos.x + buttonSize.x) &&
+			mousePos.y >= buttonPos.y &&
+			mousePos.y <= (buttonPos.y + buttonSize.y);
+
+	// 如果鼠标在按钮上，不处理棋子的移动
+	if (mouseOverButton)
+	{
+		return;
+	}
+
+	// 处理棋盘上的鼠标事件
 	Entity *entity = nullptr;
 	for (int y = 0; y < _gameOptions.rowY; y++)
 	{

@@ -107,7 +107,7 @@ private:
 
     std::vector<std::pair<int, int>> getBasicLegalMoves(const Bit &piece, int srcRow, int srcCol, bool ignorePinned) const;
 
-    // 添加 GameStatus 结构体定义
+    // 修改 GameStatus 结构体定义
     struct GameStatus
     {
         bool showGameEndPopup = false;
@@ -115,7 +115,21 @@ private:
         bool showCapturePopup = false;
         std::string statusMessage;
         float popupTimer = 0.0f;
-        const float POPUP_DURATION = 2.0f;
+        static constexpr float POPUP_DURATION = 2.0f; // 改为静态常量
+
+        // 添加赋值运算符
+        GameStatus &operator=(const GameStatus &other)
+        {
+            if (this != &other)
+            {
+                showGameEndPopup = other.showGameEndPopup;
+                showCheckPopup = other.showCheckPopup;
+                showCapturePopup = other.showCapturePopup;
+                statusMessage = other.statusMessage;
+                popupTimer = other.popupTimer;
+            }
+            return *this;
+        }
     } _gameStatus;
 
     // 添加 renderGameStatus 函数声明

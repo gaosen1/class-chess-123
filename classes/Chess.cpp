@@ -732,7 +732,7 @@ std::vector<std::pair<int, int>> Chess::getBasicLegalMoves(const Bit &piece, int
 
             Bit *targetPiece = _grid[newRow][newCol].bit();
 
-            // 检查目标位置是否有己方棋子
+            // 检查目标位置是否有方棋子
             if (targetPiece && ((targetPiece->gameTag() & 128) != 0) == isBlack)
                 continue;
 
@@ -776,7 +776,7 @@ bool Chess::isSquareUnderAttack(int row, int col, bool byBlack, bool checkKing) 
             if (((piece->gameTag() & 128) != 0) != byBlack)
                 continue;
 
-            // 如果不检查王的攻击，跳过王
+            // 如果检查王的攻击，跳过王
             if (!checkKing && (piece->gameTag() & 127) == KING)
                 continue;
 
@@ -922,7 +922,21 @@ bool Chess::isInCheck(bool blackKing) const
 
 bool Chess::canCastle(bool kingSide, bool isBlack) const
 {
-    // 检查王和车是否移动过
+    int row = isBlack ? 7 : 0;
+    int kingCol = 4;
+    int rookCol = kingSide ? 7 : 0;
+
+    // 1. 检查王和车是否还在初始位置
+    Bit *king = _grid[row][kingCol].bit();
+    Bit *rook = _grid[row][rookCol].bit();
+    if (!king || !rook ||
+        (king->gameTag() & 127) != KING ||
+        (rook->gameTag() & 127) != ROOK)
+    {
+        return false;
+    }
+
+    // 2. 检查王和车是否移动过（使用 _castlingRights）
     if (isBlack)
     {
         if (_castlingRights.blackKingMoved)
@@ -942,34 +956,30 @@ bool Chess::canCastle(bool kingSide, bool isBlack) const
             return false;
     }
 
-    int row = isBlack ? 7 : 0;
-    int kingCol = 4;
-
-    // 检查王是否正在被将军
-    if (isInCheck(isBlack))
-        return false;
-
-    // 检查路径上是否有棋子
-    if (kingSide)
+    // 3. 检查中间格子是否为空
+    int startCol = kingCol + (kingSide ? 1 : -1);
+    int endCol = kingSide ? rookCol - 1 : rookCol + 1;
+    int step = kingSide ? 1 : -1;
+    for (int col = startCol; kingSide ? (col <= endCol) : (col >= endCol); col += step)
     {
-        for (int col = 5; col < 7; col++)
+        if (_grid[row][col].bit() != nullptr)
         {
-            if (_grid[row][col].bit() != nullptr)
-                return false;
-            // 检查路径上的格子是否被攻击
-            if (isSquareUnderAttack(row, col, !isBlack))
-                return false;
+            return false;
         }
     }
-    else
+
+    // 4. 检查王是否正在被将军
+    if (isInCheck(isBlack))
     {
-        for (int col = 3; col > 0; col--)
+        return false;
+    }
+
+    // 5. 检查王经过的格子是否被攻击
+    for (int col = kingCol; kingSide ? (col <= kingCol + 2) : (col >= kingCol - 2); col += step)
+    {
+        if (isSquareUnderAttack(row, col, !isBlack))
         {
-            if (_grid[row][col].bit() != nullptr)
-                return false;
-            // 检查路径上的格子是否被攻击
-            if (isSquareUnderAttack(row, col, !isBlack))
-                return false;
+            return false;
         }
     }
 
@@ -1058,10 +1068,73 @@ void Chess::promotePawn(int row, int col)
 
 void Chess::drawFrame()
 {
-    // 直接调用基类的 drawFrame 来渲染棋盘
+    // 获取主视口
+    ImGuiViewport *viewport = ImGui::GetMainViewport();
+
+    // 创建控制面板窗口
+    ImGuiWindowFlags control_flags =
+        ImGuiWindowFlags_NoDecoration |
+        ImGuiWindowFlags_AlwaysAutoResize |
+        ImGuiWindowFlags_NoSavedSettings |
+        ImGuiWindowFlags_NoFocusOnAppearing |
+        ImGuiWindowFlags_NoNav;
+
+    // 设置控制面板位置（在主窗口内）
+    ImVec2 control_pos = viewport->Pos;
+    control_pos.x += 10;
+    control_pos.y += 10;
+
+    ImGui::SetNextWindowPos(control_pos);
+    ImGui::SetNextWindowSize(ImVec2(viewport->Size.x - 20, 50));
+    ImGui::SetNextWindowViewport(viewport->ID);
+
+    // 开始控制面板窗口
+    ImGui::Begin("##Controls", nullptr, control_flags);
+
+    // 设置按钮样式
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.3f, 0.8f, 0.7f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.4f, 0.9f, 0.7f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.1f, 0.2f, 0.7f, 0.7f));
+
+    // 创建重置按钮
+    if (ImGui::Button("Reset Game", ImVec2(100, 30)))
+    {
+        printf("\n=== Game Reset ===\n");
+
+        // 重置游戏状态
+        _gameStatus.showGameEndPopup = false;
+        _isWhiteTurn = true;
+        _castlingRights = CastlingRights();
+        setupInitialPosition();
+
+        // 清除历史记录
+        for (auto &turn : _turns)
+        {
+            delete turn;
+        }
+        _turns.clear();
+
+        // 添加初始回合
+        Turn *turn = Turn::initStartOfGame(this);
+        _turns.push_back(turn);
+
+        // 重置回合数
+        _gameOptions.currentTurnNo = 0;
+    }
+
+    // 恢复按钮样式
+    ImGui::PopStyleColor(3);
+
+    // 添加当前回合信息
+    ImGui::SameLine(ImGui::GetWindowWidth() - 150);
+    ImGui::Text("Turn: %s", _isWhiteTurn ? "White" : "Black");
+
+    ImGui::End();
+
+    // 渲染棋盘和棋子
     Game::drawFrame();
 
-    // 只保留游戏结束弹窗的渲染
+    // 渲染游戏状态弹窗
     if (_gameStatus.showGameEndPopup)
     {
         renderGameStatus();
