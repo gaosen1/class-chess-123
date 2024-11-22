@@ -4,6 +4,8 @@
 #include "Turn.h"
 #include "../Application.h"
 #include <cmath>
+#include <windows.h>
+#include <GL/gl.h>
 
 Game::Game()
 {
@@ -186,8 +188,10 @@ void Game::findDropTarget(ImVec2 &pos)
 //
 void Game::drawFrame()
 {
+	// 确保在每一帧都检查鼠标状态
 	scanForMouse();
 
+	// 绘制棋盘格子
 	for (int y = 0; y < _gameOptions.rowY; y++)
 	{
 		for (int x = 0; x < _gameOptions.rowX; x++)
@@ -196,9 +200,8 @@ void Game::drawFrame()
 			holder.paintSprite();
 		}
 	}
-	//
-	// paint the pieces second so they are always on top of the board as we move them
-	//
+
+	// 绘制静态棋子
 	for (int y = 0; y < _gameOptions.rowY; y++)
 	{
 		for (int x = 0; x < _gameOptions.rowX; x++)
@@ -210,7 +213,8 @@ void Game::drawFrame()
 			}
 		}
 	}
-	// now paint the moving pieces
+
+	// 绘制移动中的棋子
 	for (int y = 0; y < _gameOptions.rowY; y++)
 	{
 		for (int x = 0; x < _gameOptions.rowX; x++)
@@ -223,19 +227,11 @@ void Game::drawFrame()
 			}
 		}
 	}
-	//
-	// now paint any picked up pieces
-	//
-	for (int y = 0; y < _gameOptions.rowY; y++)
+
+	// 最后绘制被拾起的棋子（确保在最上层）
+	if (_dragBit && _dragBit->getPickedUp())
 	{
-		for (int x = 0; x < _gameOptions.rowX; x++)
-		{
-			BitHolder &holder = getHolderAt(x, y);
-			if (holder.bit() && holder.bit()->getPickedUp())
-			{
-				holder.bit()->paintSprite();
-			}
-		}
+		_dragBit->paintSprite();
 	}
 }
 
@@ -341,17 +337,17 @@ void Game::mouseMoved(ImVec2 &location, Entity *entity)
 {
 	if (_dragBit)
 	{
-		// Get the mouse position, and see if we've moved 3 pixels since the mouseDown:
 		ImVec2 pos = location;
-		if (std::fabs(pos.x - _dragStartPos.x) >= 12 || std::fabs(pos.y - _dragStartPos.y) >= 12)
+		if (std::fabs(pos.x - _dragStartPos.x) >= 3 || std::fabs(pos.y - _dragStartPos.y) >= 3)
+		{
 			_dragMoved = true;
+		}
 
-		// Move the _dragBit
 		pos.x += _dragOffset.x;
 		pos.y += _dragOffset.y;
 		_dragBit->setCenterPosition(pos);
+		_dragBit->setPickedUp(true);
 
-		// Find what it's over:
 		findDropTarget(pos);
 	}
 }

@@ -129,31 +129,45 @@ bool Chess::canBitMoveFromTo(Bit &bit, BitHolder &src, BitHolder &dst)
     if (srcRow == -1 || dstRow == -1)
         return false;
 
-    // 保存目标位置的状态
+    // 获取目标位置的棋子
     Bit *targetPiece = _grid[dstRow][dstCol].bit();
 
-    printf("\n=== Checking Move ===\n");
-    printf("Source: [%d,%d], Destination: [%d,%d]\n", srcRow, srcCol, dstRow, dstCol);
+    // 只在目标位置改变时才打印信息
+    static int lastPrintedDstRow = -1;
+    static int lastPrintedDstCol = -1;
+    if (dstRow != lastPrintedDstRow || dstCol != lastPrintedDstCol)
+    {
+        printf("\n=== Checking Move ===\n");
+        printf("Source: [%d,%d], Destination: [%d,%d]\n", srcRow, srcCol, dstRow, dstCol);
 
+        if (targetPiece)
+        {
+            printf("Target square has: %s %s\n",
+                   ((targetPiece->gameTag() & 128) != 0) ? "black" : "white",
+                   (targetPiece->gameTag() & 127) == PAWN ? "pawn" : (targetPiece->gameTag() & 127) == KNIGHT ? "knight"
+                                                                 : (targetPiece->gameTag() & 127) == BISHOP   ? "bishop"
+                                                                 : (targetPiece->gameTag() & 127) == ROOK     ? "rook"
+                                                                 : (targetPiece->gameTag() & 127) == QUEEN    ? "queen"
+                                                                 : (targetPiece->gameTag() & 127) == KING     ? "king"
+                                                                                                              : "unknown");
+        }
+        else
+        {
+            printf("Target square is empty\n");
+        }
+
+        lastPrintedDstRow = dstRow;
+        lastPrintedDstCol = dstCol;
+    }
+
+    // 保存目标位置的状态
+    _lastMoveState.targetPiece = targetPiece;
     if (targetPiece)
     {
-        printf("Target square has: %s %s\n",
-               ((targetPiece->gameTag() & 128) != 0) ? "black" : "white",
-               (targetPiece->gameTag() & 127) == PAWN ? "pawn" : (targetPiece->gameTag() & 127) == KNIGHT ? "knight"
-                                                             : (targetPiece->gameTag() & 127) == BISHOP   ? "bishop"
-                                                             : (targetPiece->gameTag() & 127) == ROOK     ? "rook"
-                                                             : (targetPiece->gameTag() & 127) == QUEEN    ? "queen"
-                                                             : (targetPiece->gameTag() & 127) == KING     ? "king"
-                                                                                                          : "unknown");
-
-        // 保存状态
-        _lastMoveState.targetPiece = targetPiece;
         _lastMoveState.isCapture = ((targetPiece->gameTag() & 128) != 0) != isBlack;
     }
     else
     {
-        printf("Target square is empty\n");
-        _lastMoveState.targetPiece = nullptr;
         _lastMoveState.isCapture = false;
     }
 
@@ -430,7 +444,7 @@ bool Chess::isValidPosition(int row, int col) const
 
 void Chess::setupInitialPosition()
 {
-    // 首先清除所有现有的棋子
+    // 首清除所有现有的棋子
     for (int row = 0; row < 8; row++)
     {
         for (int col = 0; col < 8; col++)

@@ -174,7 +174,6 @@ int main(int, char **)
     while (!done)
     {
         // Poll and handle messages (inputs, window resize, etc.)
-        // See the WndProc() function below for our to dispatch events to the Win32 backend.
         MSG msg;
         while (::PeekMessage(&msg, NULL, 0U, 0U, PM_REMOVE))
         {
@@ -200,6 +199,7 @@ int main(int, char **)
                          ImGuiWindowFlags_NoMove |
                          ImGuiWindowFlags_NoScrollbar |
                          ImGuiWindowFlags_NoBringToFrontOnFocus |
+                         ImGuiWindowFlags_NoNavFocus | // 添加这个标志
                          ImGuiWindowFlags_NoBackground);
 
         ClassGame::RenderGame();
@@ -209,12 +209,22 @@ int main(int, char **)
         // Rendering
         ImGui::Render();
 
-        // 清除整个窗口
+        // 保存当前的 OpenGL 上下文
+        HGLRC current_context = wglGetCurrentContext();
+        HDC current_dc = wglGetCurrentDC();
+
+        // 确保使用正确的上下文
+        wglMakeCurrent(g_MainWindow.hDC, g_hRC);
+
         glViewport(0, 0, g_Width, g_Height);
         glClearColor(clear_color.x, clear_color.y, clear_color.z, clear_color.w);
-        glClear(GL_COLOR_BUFFER_BIT);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // 同时清除深度缓冲
 
-        // 渲染 ImGui 数据
+        // 启用深度测试
+        glEnable(GL_DEPTH_TEST);
+        glDepthFunc(GL_LEQUAL);
+
+        // 渲染 ImGui 绘制数据
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
         // Update and Render additional Platform Windows
@@ -222,15 +232,35 @@ int main(int, char **)
         {
             ImGui::UpdatePlatformWindows();
             ImGui::RenderPlatformWindowsDefault();
-            wglMakeCurrent(g_MainWindow.hDC, g_hRC); // 恢复主窗口的渲染上下文
         }
 
-        // 强制立即刷新缓冲区
-        glFlush();
+        // 恢复原始的 OpenGL 上下文
+        wglMakeCurrent(current_dc, current_context);
+
+        // 禁用深度测试
+        glDisable(GL_DEPTH_TEST);
+
+        // 交换缓冲区
         ::SwapBuffers(g_MainWindow.hDC);
 
-        // 添加一个小延时以控制帧率
-        Sleep(1); // 1ms 延时，避免 CPU 占用过高
+        // 使用更精确的帧率控制
+        static LARGE_INTEGER frequency;
+        static LARGE_INTEGER last = {0};
+        static LARGE_INTEGER now;
+        static double target_frametime = 1.0 / 60.0; // 60 FPS
+
+        if (last.QuadPart == 0)
+        {
+            QueryPerformanceFrequency(&frequency);
+            QueryPerformanceCounter(&last);
+        }
+
+        do
+        {
+            QueryPerformanceCounter(&now);
+        } while ((now.QuadPart - last.QuadPart) / (double)frequency.QuadPart < target_frametime);
+
+        last = now;
     }
 
     ImGui_ImplOpenGL3_Shutdown();
