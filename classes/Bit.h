@@ -31,7 +31,7 @@ public:
 		_moving = false;
 	};
 
-	~Bit();
+	virtual ~Bit() = default;
 
 	// helper functions
 	bool getPickedUp();

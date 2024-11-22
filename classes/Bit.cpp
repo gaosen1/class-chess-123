@@ -1,11 +1,6 @@
-
 #include "Bit.h"
 #include "BitHolder.h"
 #include <cmath>
-
-Bit::~Bit()
-{
-}
 
 BitHolder *Bit::getHolder()
 {

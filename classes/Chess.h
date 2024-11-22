@@ -149,4 +149,21 @@ private:
     // 只声明静态成员变量，不要在这里初始化
     static int lastDstRow;
     static int lastDstCol;
+
+    // 王车易位状态
+    struct CastlingState
+    {
+        bool inProgress = false;
+        bool isKingSide = false;
+        int rookFromCol = -1;
+        int rookToCol = -1;
+    } _castlingState; // 直接定义并实例化成员变量
+
+    // 在 private 部分添加过路兵状态结构体
+    struct EnPassantState
+    {
+        int pawnRow = -1;       // 可以被吃的兵的行
+        int pawnCol = -1;       // 可以被吃的兵的列
+        bool available = false; // 是否有可以吃的过路兵
+    } _enPassantState;
 };

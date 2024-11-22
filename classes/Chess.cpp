@@ -184,6 +184,61 @@ bool Chess::canBitMoveFromTo(Bit &bit, BitHolder &src, BitHolder &dst)
         printf("=== Check End ===\n\n");
     }
 
+    int pieceType = bit.gameTag() & 127;
+
+    // 检查王车易位
+    if (pieceType == KING && abs(dstCol - srcCol) == 2)
+    {
+        bool isKingSide = dstCol > srcCol;
+        if (canCastle(isKingSide, isBlack))
+        {
+            // 设置王车易位状态
+            _castlingState.inProgress = true;
+            _castlingState.isKingSide = isKingSide;
+            _castlingState.rookFromCol = isKingSide ? 7 : 0;
+            _castlingState.rookToCol = isKingSide ? 5 : 3;
+            printf("\n=== Castling Initiated ===\n");
+            printf("%s side castling for %s\n",
+                   isKingSide ? "King" : "Queen",
+                   isBlack ? "Black" : "White");
+            return true;
+        }
+        return false;
+    }
+
+    // 检查吃过路兵
+    if (pieceType == PAWN)
+    {
+        // 检查是否是吃过路兵的情况
+        if (_enPassantState.available)
+        {
+            int expectedRow = isBlack ? 3 : 4; // 吃过路兵的兵应该在的行
+            if (srcRow == expectedRow &&
+                abs(srcCol - _enPassantState.pawnCol) == 1 && // 在过路兵的左右
+                dstRow == (isBlack ? 2 : 5) &&                // 目标行正确
+                dstCol == _enPassantState.pawnCol)            // 目标列是过路兵的列
+            {
+                printf("\n=== En Passant Available ===\n");
+                printf("%s pawn can capture en passant at [%d,%d]\n",
+                       isBlack ? "Black" : "White",
+                       _enPassantState.pawnRow,
+                       _enPassantState.pawnCol);
+                return true;
+            }
+        }
+
+        // 记录双步移动的兵（为下一回合的吃过路兵做准备）
+        if (abs(dstRow - srcRow) == 2)
+        {
+            _enPassantState.pawnRow = dstRow;
+            _enPassantState.pawnCol = dstCol;
+            _enPassantState.available = true;
+            printf("\n=== En Passant Target Created ===\n");
+            printf("Pawn at [%d,%d] can be captured en passant next turn\n",
+                   dstRow, dstCol);
+        }
+    }
+
     return isLegal;
 }
 
@@ -253,9 +308,79 @@ void Chess::bitMovedFromTo(Bit &bit, BitHolder &src, BitHolder &dst)
         }
     }
 
-    // 执行移动
+    // 先执行王的移动
     dst.setBit(&bit);
     bit.setPosition(dst.getPosition());
+
+    // 然后处理王车易位
+    if (_castlingState.inProgress)
+    {
+        int rookRow = isBlack ? 7 : 0;
+
+        // 获取车的位置
+        Bit *rook = _grid[rookRow][_castlingState.rookFromCol].bit();
+        if (rook)
+        {
+            // 计算车的新位置
+            ImVec2 newRookPos = _grid[rookRow][_castlingState.rookToCol].getPosition();
+
+            // 移动车
+            _grid[rookRow][_castlingState.rookToCol].setBit(rook);
+            _grid[rookRow][_castlingState.rookFromCol].setBit(nullptr);
+
+            // 添加动画效果
+            rook->moveTo(newRookPos);
+
+            printf("Rook moved from [%d,%d] to [%d,%d]\n",
+                   rookRow, _castlingState.rookFromCol,
+                   rookRow, _castlingState.rookToCol);
+        }
+
+        // 重置王车易位状态
+        _castlingState.inProgress = false;
+
+        // 更新王车易位权限
+        if (isBlack)
+        {
+            _castlingRights.blackKingMoved = true;
+            _castlingRights.blackRookKingside = true;
+            _castlingRights.blackRookQueenside = true;
+        }
+        else
+        {
+            _castlingRights.whiteKingMoved = true;
+            _castlingRights.whiteRookKingside = true;
+            _castlingRights.whiteRookQueenside = true;
+        }
+
+        printf("=== Castling Completed ===\n");
+    }
+
+    // 处理吃过路兵
+    if (pieceType == PAWN &&
+        _enPassantState.available &&
+        dstCol == _enPassantState.pawnCol &&
+        srcRow == (isBlack ? 3 : 4) &&
+        dstRow == (isBlack ? 2 : 5))
+    {
+        // 移除被吃掉的过路兵
+        Bit *capturedPawn = _grid[srcRow][dstCol].bit();
+        if (capturedPawn)
+        {
+            printf("\n=== En Passant Capture ===\n");
+            printf("%s pawn captured en passant at [%d,%d]\n",
+                   isBlack ? "Black" : "White",
+                   srcRow, dstCol);
+
+            _grid[srcRow][dstCol].setBit(nullptr);
+            delete capturedPawn;
+        }
+    }
+
+    // 重置吃过路兵状态（每回合后都要重置）
+    _enPassantState.available = false;
+    _enPassantState.pawnRow = -1;
+    _enPassantState.pawnCol = -1;
 
     // 切换回合
     _isWhiteTurn = !_isWhiteTurn;
@@ -573,7 +698,7 @@ std::vector<std::pair<int, int>> Chess::getBasicLegalMoves(const Bit &piece, int
         int direction = isBlack ? -1 : 1;
         int startRow = isBlack ? 6 : 1;
 
-        // 前进一
+        // 前进一步
         if (isValidPosition(srcRow + direction, srcCol) &&
             !_grid[srcRow + direction][srcCol].bit())
         {
@@ -586,17 +711,31 @@ std::vector<std::pair<int, int>> Chess::getBasicLegalMoves(const Bit &piece, int
             }
         }
 
-        // 吃子移动
+        // 吃子移动（包括普通吃子和吃过路兵）
         for (int dc : {-1, 1})
         {
             int newCol = srcCol + dc;
             int newRow = srcRow + direction;
+
             if (isValidPosition(newRow, newCol))
             {
+                // 检查普通吃子
                 Bit *targetPiece = _grid[newRow][newCol].bit();
                 if (targetPiece && ((targetPiece->gameTag() & 128) != 0) != isBlack)
                 {
                     moves.push_back({newRow, newCol});
+                }
+
+                // 检查吃过路兵
+                if (_enPassantState.available)
+                {
+                    int expectedRow = isBlack ? 3 : 4; // 吃过路兵的兵应该在的行
+                    if (srcRow == expectedRow &&
+                        newCol == _enPassantState.pawnCol) // 目标列是过路兵的列
+                    {
+                        moves.push_back({newRow, newCol}); // 添加吃过路兵的移动
+                        printf("En passant move available at [%d,%d]\n", newRow, newCol);
+                    }
                 }
             }
         }
@@ -1061,7 +1200,8 @@ void Chess::promotePawn(int row, int col)
     if ((isBlack && row == 0) || (!isBlack && row == 7))
     {
         // 默认升变为皇后
-        delete piece;
+        _grid[row][col].setBit(nullptr); // 先解除关联
+        delete piece;                    // 然后安全删除
         placePiece(row, col, QUEEN, isBlack ? BLACK : WHITE);
     }
 }
@@ -1157,7 +1297,7 @@ void Chess::renderGameStatus()
     // 游戏结束弹窗
     if (_gameStatus.showGameEndPopup)
     {
-        // 确保弹窗总是打开
+        // 确保弹窗是打开
         if (!ImGui::IsPopupOpen("Game Over"))
         {
             ImGui::OpenPopup("Game Over");
