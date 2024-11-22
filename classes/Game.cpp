@@ -346,10 +346,9 @@ void Game::mouseMoved(ImVec2 &location, Entity *entity)
 		if (std::fabs(pos.x - _dragStartPos.x) >= 12 || std::fabs(pos.y - _dragStartPos.y) >= 12)
 			_dragMoved = true;
 
-		// Move the _dragBit (without animation -- it's unnecessary and slows down responsiveness):
+		// Move the _dragBit
 		pos.x += _dragOffset.x;
 		pos.y += _dragOffset.y;
-
 		_dragBit->setCenterPosition(pos);
 
 		// Find what it's over:

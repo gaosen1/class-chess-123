@@ -1,5 +1,9 @@
 #include "Chess.h"
 
+// 在这里初始化静态成员变量
+int Chess::lastDstRow = -1;
+int Chess::lastDstCol = -1;
+
 const int AI_PLAYER = 1;
 const int HUMAN_PLAYER = -1;
 
@@ -93,7 +97,7 @@ bool Chess::canBitMoveFrom(Bit &bit, BitHolder &src)
 bool Chess::canBitMoveFromTo(Bit &bit, BitHolder &src, BitHolder &dst)
 {
     bool isBlack = (bit.gameTag() & 128) != 0;
-    if (isBlack == _isWhiteTurn) // 如果不是当前玩家的回合
+    if (isBlack == _isWhiteTurn)
     {
         return false;
     }
@@ -125,13 +129,54 @@ bool Chess::canBitMoveFromTo(Bit &bit, BitHolder &src, BitHolder &dst)
     if (srcRow == -1 || dstRow == -1)
         return false;
 
+    // 保存目标位置的状态
+    Bit *targetPiece = _grid[dstRow][dstCol].bit();
+
+    printf("\n=== Checking Move ===\n");
+    printf("Source: [%d,%d], Destination: [%d,%d]\n", srcRow, srcCol, dstRow, dstCol);
+
+    if (targetPiece)
+    {
+        printf("Target square has: %s %s\n",
+               ((targetPiece->gameTag() & 128) != 0) ? "black" : "white",
+               (targetPiece->gameTag() & 127) == PAWN ? "pawn" : (targetPiece->gameTag() & 127) == KNIGHT ? "knight"
+                                                             : (targetPiece->gameTag() & 127) == BISHOP   ? "bishop"
+                                                             : (targetPiece->gameTag() & 127) == ROOK     ? "rook"
+                                                             : (targetPiece->gameTag() & 127) == QUEEN    ? "queen"
+                                                             : (targetPiece->gameTag() & 127) == KING     ? "king"
+                                                                                                          : "unknown");
+
+        // 保存状态
+        _lastMoveState.targetPiece = targetPiece;
+        _lastMoveState.isCapture = ((targetPiece->gameTag() & 128) != 0) != isBlack;
+    }
+    else
+    {
+        printf("Target square is empty\n");
+        _lastMoveState.targetPiece = nullptr;
+        _lastMoveState.isCapture = false;
+    }
+
+    lastDstRow = dstRow;
+    lastDstCol = dstCol;
+
     auto legalMoves = getLegalMoves(bit, srcRow, srcCol);
-    return std::find(legalMoves.begin(), legalMoves.end(),
-                     std::make_pair(dstRow, dstCol)) != legalMoves.end();
+    bool isLegal = std::find(legalMoves.begin(), legalMoves.end(),
+                             std::make_pair(dstRow, dstCol)) != legalMoves.end();
+
+    if (dstRow != lastDstRow || dstCol != lastDstCol)
+    {
+        printf("Move is %s\n", isLegal ? "legal" : "illegal");
+        printf("=== Check End ===\n\n");
+    }
+
+    return isLegal;
 }
 
 void Chess::bitMovedFromTo(Bit &bit, BitHolder &src, BitHolder &dst)
 {
+    printf("\n=== Move Start ===\n");
+
     // 获取源位置和目标位置
     int srcRow = -1, srcCol = -1, dstRow = -1, dstCol = -1;
     for (int row = 0; row < 8; row++)
@@ -151,80 +196,90 @@ void Chess::bitMovedFromTo(Bit &bit, BitHolder &src, BitHolder &dst)
         }
     }
 
-    // 更新王车易位权限
-    updateCastlingRights(bit, srcRow, srcCol);
-
-    // 检查是否是王车易位
+    bool isBlack = (bit.gameTag() & 128) != 0;
     int pieceType = bit.gameTag() & 127;
-    if (pieceType == KING && abs(dstCol - srcCol) == 2)
+
+    // 使用保存的状态
+    Bit *targetPiece = _lastMoveState.targetPiece;
+    bool isCapture = _lastMoveState.isCapture;
+
+    printf("Moving %s %s from [%d,%d] to [%d,%d]\n",
+           isBlack ? "black" : "white",
+           pieceType == PAWN ? "pawn" : pieceType == KNIGHT ? "knight"
+                                    : pieceType == BISHOP   ? "bishop"
+                                    : pieceType == ROOK     ? "rook"
+                                    : pieceType == QUEEN    ? "queen"
+                                    : pieceType == KING     ? "king"
+                                                            : "unknown",
+           srcRow, srcCol, dstRow, dstCol);
+
+    if (isCapture)
     {
-        printf("Performing castling\n");
-        bool isKingSide = dstCol > srcCol;
-        int rookSrcCol = isKingSide ? 7 : 0;
-        int rookDstCol = isKingSide ? dstCol - 1 : dstCol + 1;
+        int capturedType = targetPiece->gameTag() & 127;
+        printf("Capturing %s %s\n",
+               ((targetPiece->gameTag() & 128) != 0) ? "black" : "white",
+               capturedType == PAWN ? "pawn" : capturedType == KNIGHT ? "knight"
+                                           : capturedType == BISHOP   ? "bishop"
+                                           : capturedType == ROOK     ? "rook"
+                                           : capturedType == QUEEN    ? "queen"
+                                           : capturedType == KING     ? "king"
+                                                                      : "unknown");
 
-        // 移动车
-        Bit *rook = _grid[srcRow][rookSrcCol].bit();
-        if (rook)
-        {
-            printf("Moving rook from [%d,%d] to [%d,%d]\n",
-                   srcRow, rookSrcCol, srcRow, rookDstCol);
-            _grid[srcRow][rookDstCol].setBit(rook);
-            rook->setPosition(_grid[srcRow][rookDstCol].getPosition());
-            _grid[srcRow][rookSrcCol].setBit(nullptr);
-        }
-    }
-
-    // 检查是否吃子
-    Bit *capturedPiece = dst.bit();
-    if (capturedPiece)
-    {
-        bool isBlack = (bit.gameTag() & 128) != 0;
-        const char *pieceNames[] = {"", "Pawn", "Knight", "Bishop", "Rook", "Queen", "King"};
-        int capturedType = capturedPiece->gameTag() & 127;
-
-        // 检查是否吃掉了王
         if (capturedType == KING)
         {
-            // 先完成移动
-            Game::bitMovedFromTo(bit, src, dst);
-
-            // 设置游戏结束状态
+            printf("\n=== Game Over ===\n");
+            printf("King captured! %s wins!\n", isBlack ? "Black" : "White");
             _gameStatus.showGameEndPopup = true;
             _gameStatus.statusMessage = std::string(isBlack ? "Black" : "White") +
                                         " wins by capturing the " +
                                         std::string(!isBlack ? "Black" : "White") +
                                         " King!";
-
-            // 强制显示弹窗
-            renderGameStatus();
-
-            // 切换回合并返回
             _isWhiteTurn = !_isWhiteTurn;
             return;
         }
-
-        // 普通吃子提示
-        _gameStatus.showCapturePopup = true;
-        _gameStatus.popupTimer = _gameStatus.POPUP_DURATION;
-        _gameStatus.statusMessage = std::string(isBlack ? "Black" : "White") +
-                                    " captured " +
-                                    std::string(!isBlack ? "Black" : "White") +
-                                    "'s " + pieceNames[capturedType];
     }
 
-    Game::bitMovedFromTo(bit, src, dst);
-    _isWhiteTurn = !_isWhiteTurn; // 切换回合
-    // printf("Turn changed to %s\n", _isWhiteTurn ? "White" : "Black");
+    // 执行移动
+    dst.setBit(&bit);
+    bit.setPosition(dst.getPosition());
 
-    // 检查将军和将死状态
+    // 切换回合
+    _isWhiteTurn = !_isWhiteTurn;
+    printf("Turn changed to %s\n", _isWhiteTurn ? "White" : "Black");
+
+    // 检查对手是否被将军
     bool opponentIsBlack = !_isWhiteTurn;
+
+    // 只在移动完成后检查一次将军状态
     if (isInCheck(opponentIsBlack))
     {
-        if (isCheckmate(opponentIsBlack))
+        // 检查是否将死
+        bool hasLegalMove = false;
+
+        // 遍历对手所有棋子
+        for (int r = 0; r < 8 && !hasLegalMove; r++)
         {
+            for (int c = 0; c < 8 && !hasLegalMove; c++)
+            {
+                Bit *piece = _grid[r][c].bit();
+                if (!piece || ((piece->gameTag() & 128) != 0) != opponentIsBlack)
+                    continue;
+
+                // 只要找到一个合法移动就可以退出
+                if (!getLegalMoves(*piece, r, c).empty())
+                {
+                    hasLegalMove = true;
+                    break;
+                }
+            }
+        }
+
+        if (!hasLegalMove)
+        {
+            printf("\n=== Game Over ===\n");
+            printf("Checkmate! %s wins!\n", !opponentIsBlack ? "White" : "Black");
             _gameStatus.showGameEndPopup = true;
-            _gameStatus.statusMessage = std::string(_isWhiteTurn ? "Black" : "White") +
+            _gameStatus.statusMessage = std::string(!opponentIsBlack ? "White" : "Black") +
                                         " wins by checkmate!";
         }
         else
@@ -234,7 +289,11 @@ void Chess::bitMovedFromTo(Bit &bit, BitHolder &src, BitHolder &dst)
         }
     }
 
+    printf("=== Move End ===\n\n");
     clearHighlights();
+
+    // 结束回合
+    endTurn();
 }
 
 //
@@ -500,7 +559,7 @@ std::vector<std::pair<int, int>> Chess::getBasicLegalMoves(const Bit &piece, int
         int direction = isBlack ? -1 : 1;
         int startRow = isBlack ? 6 : 1;
 
-        // 前进一步
+        // 前进一
         if (isValidPosition(srcRow + direction, srcCol) &&
             !_grid[srcRow + direction][srcCol].bit())
         {
@@ -666,7 +725,7 @@ std::vector<std::pair<int, int>> Chess::getBasicLegalMoves(const Bit &piece, int
             // 检查是否会与对方的王相邻
             auto [enemyKingRow, enemyKingCol] = getKingPosition(!isBlack);
             if (abs(enemyKingRow - newRow) <= 1 && abs(enemyKingCol - newCol) <= 1)
-                continue; // 不允许两个王相
+                continue; // 允许两个王相
 
             moves.push_back({newRow, newCol});
         }
@@ -821,8 +880,30 @@ std::pair<int, int> Chess::getKingPosition(bool blackKing) const
 bool Chess::isInCheck(bool blackKing) const
 {
     auto [kingRow, kingCol] = getKingPosition(blackKing);
-    // 检查王是否被攻击，但不考虑对方王的攻击
-    return isSquareUnderAttack(kingRow, kingCol, !blackKing, false);
+    if (kingRow == -1 || kingCol == -1)
+    {
+        return false;
+    }
+
+    // 检查是否有任何敌方棋子可以攻击到王的位置
+    for (int r = 0; r < 8; r++)
+    {
+        for (int c = 0; c < 8; c++)
+        {
+            Bit *piece = _grid[r][c].bit();
+            if (!piece || ((piece->gameTag() & 128) != 0) == blackKing)
+                continue;
+
+            // 获取这个棋子的基本移动
+            auto moves = getBasicLegalMoves(*piece, r, c, true);
+            if (std::find(moves.begin(), moves.end(),
+                          std::make_pair(kingRow, kingCol)) != moves.end())
+            {
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 bool Chess::canCastle(bool kingSide, bool isBlack) const
@@ -914,7 +995,7 @@ void Chess::updateCastlingRights(const Bit &piece, int fromRow, int fromCol)
 
 bool Chess::isCheckmate(bool blackKing) const
 {
-    // 如果不在将军状态，就不可能是将死
+    // 如果不在将军状态，就不可能是将
     if (!isInCheck(blackKing))
     {
         return false;
@@ -972,18 +1053,6 @@ void Chess::drawFrame()
     // 调用基类的 drawFrame 来渲染棋盘
     Game::drawFrame();
 
-    // 在棋盘右侧添加控制按钮
-    ImGui::SameLine(pieceSize * 9); // 在棋盘右侧留出空间
-    ImGui::BeginGroup();            // 开始一个组，让按钮垂直排列
-
-    // 添加测试按钮
-    if (ImGui::Button("Test End Game", ImVec2(120, 30)))
-    {
-        _gameStatus.showGameEndPopup = true;
-        _gameStatus.statusMessage = "Game Over (Test)";
-    }
-
-    ImGui::EndGroup();
     ImGui::End();
 
     // 如果游戏已经结束，显示弹窗

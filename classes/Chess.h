@@ -120,4 +120,19 @@ private:
 
     // 添加 renderGameStatus 函数声明
     void renderGameStatus();
+
+    // 添加结构体定义
+    struct LastMoveState
+    {
+        Bit *targetPiece;
+        bool isCapture;
+        LastMoveState() : targetPiece(nullptr), isCapture(false) {}
+    };
+
+    // 添加成员变量
+    LastMoveState _lastMoveState;
+
+    // 只声明静态成员变量，不要在这里初始化
+    static int lastDstRow;
+    static int lastDstCol;
 };
