@@ -214,7 +214,7 @@ bool Chess::canBitMoveFromTo(Bit &bit, BitHolder &src, BitHolder &dst)
         {
             int expectedRow = isBlack ? 3 : 4; // 吃过路兵的兵应该在的行
 
-            // 检查移动的兵是否在正确的行
+            // 检查移动的兵是否正确的行
             if (srcRow == expectedRow)
             {
                 // 检查是否是斜向移动到过路兵的位置
@@ -539,10 +539,54 @@ void Chess::setStateString(const std::string &s)
 //
 void Chess::updateAI()
 {
-    if (!_isWhiteTurn) // AI 控制黑方
+    if (!_isWhiteTurn && _gameOptions.AIPlayer)
     {
+        // 检查是否有棋子正在移动
+        bool piecesMoving = false;
+        for (int row = 0; row < 8; row++)
+        {
+            for (int col = 0; col < 8; col++)
+            {
+                Bit *piece = _grid[row][col].bit();
+                if (piece && piece->getMoving())
+                {
+                    piecesMoving = true;
+                    break;
+                }
+            }
+            if (piecesMoving)
+                break;
+        }
+
+        // 如果有棋子在移动，等待移动完成
+        if (piecesMoving)
+        {
+            return;
+        }
+
+        static bool startedThinking = false;
+        static auto startTime = std::chrono::steady_clock::now();
+
+        // 开始思考
+        if (!startedThinking)
+        {
+            printf("\n=== AI Thinking ===\n");
+            startTime = std::chrono::steady_clock::now();
+            startedThinking = true;
+            return;
+        }
+
+        // 思考延时（改为0.8秒）
+        auto currentTime = std::chrono::steady_clock::now();
+        auto elapsedTime = std::chrono::duration_cast<std::chrono::milliseconds>(currentTime - startTime).count();
+
+        if (elapsedTime < 800) // 缩短到0.8秒
+        {
+            return; // 继续"思考"
+        }
+
         // 使用 Minimax 算法找到最佳移动
-        auto [from, to] = findBestMove(true, 3); // 深度为3的搜索
+        auto [from, to] = findBestMove(true, 3);
         int fromRow = from.first, fromCol = from.second;
         int toRow = to.first, toCol = to.second;
 
@@ -555,42 +599,107 @@ void Chess::updateAI()
                 BitHolder &src = _grid[fromRow][fromCol];
                 BitHolder &dst = _grid[toRow][toCol];
 
-                printf("\n=== AI Move ===\n");
-                printf("From: [%d,%d] To: [%d,%d]\n", fromRow, fromCol, toRow, toCol);
+                printf("AI Move: From [%d,%d] To [%d,%d]\n", fromRow, fromCol, toRow, toCol);
 
                 // 执行移动
                 bitMovedFromTo(*piece, src, dst);
             }
         }
+        else
+        {
+            printf("AI couldn't find a valid move!\n");
+        }
+
+        // 重置思考状态
+        startedThinking = false;
     }
 }
 
 int Chess::evaluatePosition() const
 {
     int score = 0;
-    // 棋子价值
-    const int pieceValues[] = {0, 100, 320, 330, 500, 900, 20000}; // 对应 EMPTY, PAWN, KNIGHT, BISHOP, ROOK, QUEEN, KING
+    // 棋子基础价值
+    const int pieceValues[] = {0, 100, 320, 330, 500, 900, 20000}; // EMPTY, PAWN, KNIGHT, BISHOP, ROOK, QUEEN, KING
 
+    // 位置价值表（鼓励棋子控制中心和重要位置）
+    const int pawnPositionBonus[8][8] = {
+        {0, 0, 0, 0, 0, 0, 0, 0},
+        {50, 50, 50, 50, 50, 50, 50, 50},
+        {10, 10, 20, 30, 30, 20, 10, 10},
+        {5, 5, 10, 25, 25, 10, 5, 5},
+        {0, 0, 0, 20, 20, 0, 0, 0},
+        {5, -5, -10, 0, 0, -10, -5, 5},
+        {5, 10, 10, -20, -20, 10, 10, 5},
+        {0, 0, 0, 0, 0, 0, 0, 0}};
+
+    const int knightPositionBonus[8][8] = {
+        {-50, -40, -30, -30, -30, -30, -40, -50},
+        {-40, -20, 0, 0, 0, 0, -20, -40},
+        {-30, 0, 10, 15, 15, 10, 0, -30},
+        {-30, 5, 15, 20, 20, 15, 5, -30},
+        {-30, 0, 15, 20, 20, 15, 0, -30},
+        {-30, 5, 10, 15, 15, 10, 5, -30},
+        {-40, -20, 0, 5, 5, 0, -20, -40},
+        {-50, -40, -30, -30, -30, -30, -40, -50}};
+
+    // 遍历棋盘
     for (int row = 0; row < 8; row++)
     {
         for (int col = 0; col < 8; col++)
         {
             Bit *piece = _grid[row][col].bit();
-            if (piece)
+            if (!piece)
+                continue;
+
+            int pieceType = piece->gameTag() & 127;
+            bool isBlack = (piece->gameTag() & 128) != 0;
+            int value = pieceValues[pieceType];
+
+            // 基础分值
+            score += isBlack ? -value : value;
+
+            // 位置加分
+            int positionBonus = 0;
+            switch (pieceType)
             {
-                int pieceType = piece->gameTag() & 127;
-                bool isBlack = (piece->gameTag() & 128) != 0;
-                int value = pieceValues[pieceType];
+            case PAWN:
+                positionBonus = pawnPositionBonus[isBlack ? (7 - row) : row][col];
+                break;
+            case KNIGHT:
+                positionBonus = knightPositionBonus[isBlack ? (7 - row) : row][col];
+                break;
+            default:
+                // 其他棋子的中心控制加分
+                positionBonus = (4 - abs(col - 3.5)) * 10 + (4 - abs(row - 3.5)) * 10;
+            }
+            score += isBlack ? -positionBonus : positionBonus;
 
-                // 黑方为负分，白方为正分
-                score += isBlack ? -value : value;
+            // 机动性加分（可移动的格子数）
+            auto moves = getBasicLegalMoves(*piece, row, col, true);
+            int mobilityBonus = moves.size() * 10;
+            score += isBlack ? -mobilityBonus : mobilityBonus;
 
-                // 位置加分（鼓励棋子控制中心）
-                int positionBonus = (4 - abs(col - 3.5)) + (4 - abs(row - 3.5));
-                score += isBlack ? -positionBonus : positionBonus;
+            // 控制中心的加分
+            if ((row == 3 || row == 4) && (col == 3 || col == 4))
+            {
+                score += isBlack ? -30 : 30;
+            }
+
+            // 保护王的加分
+            auto [kingRow, kingCol] = getKingPosition(isBlack);
+            if (abs(row - kingRow) <= 2 && abs(col - kingCol) <= 2)
+            {
+                score += isBlack ? -20 : 20;
             }
         }
     }
+
+    // 将军状态的额外评估
+    if (isInCheck(!_isWhiteTurn))
+    {
+        score += _isWhiteTurn ? 100 : -100;
+    }
+
     return score;
 }
 
@@ -1451,6 +1560,12 @@ void Chess::drawFrame()
     // 渲染棋盘和棋子
     Game::drawFrame();
 
+    // 如果是 AI 的回合，执行 AI 移动
+    if (_gameOptions.AIPlayer && !_isWhiteTurn)
+    {
+        updateAI();
+    }
+
     // 渲染游戏状态弹窗
     if (_gameStatus.showGameEndPopup)
     {
@@ -1599,4 +1714,10 @@ void Chess::renderGameStatus()
         }
         ImGui::End();
     }
+}
+
+bool Chess::gameHasAI()
+{
+    // 如果是 AI 模式且当前是黑方回合，返回 true
+    return _gameOptions.AIPlayer && !_isWhiteTurn;
 }

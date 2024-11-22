@@ -59,7 +59,7 @@ public:
     BitHolder &getHolderAt(const int x, const int y) override { return _grid[y][x]; }
 
     void updateAI() override;
-    bool gameHasAI() override { return true; }
+    bool gameHasAI() override;
 
     bool isCheckmate(bool blackKing) const;
     void promotePawn(int row, int col);
