@@ -90,7 +90,7 @@ public:
 	virtual void stopGame() = 0;
 	virtual bool gameHasAI();
 	virtual void updateAI();
-	virtual void pieceTaken(Bit *bit){};
+	virtual void pieceTaken(Bit *bit) {};
 
 	virtual std::string initialStateString() = 0;
 	virtual std::string stateString() = 0;
@@ -111,7 +111,7 @@ public:
 	void setScore(int score) { _gameOptions.score = score; };
 	// this code below limits class to two players at the most, but it ensures player 0 is white and player 1 is black
 	Player *getCurrentPlayer() { return (_players.size() != 0) ? _players.at(_gameOptions.currentTurnNo & 1) : nullptr; };
-	Player *getPlayerAt(unsigned int playerNumber) { return (_players.size() != 0) ? _players.at(playerNumber) : nullptr;};
+	Player *getPlayerAt(unsigned int playerNumber) { return (_players.size() != 0) ? _players.at(playerNumber) : nullptr; };
 	const int getAIPlayer() { return _gameOptions.AIPlayer; };
 	const int getHumanPlayer()
 	{
@@ -129,6 +129,8 @@ public:
 	std::string _lastMove;
 
 	GameOptions _gameOptions;
+
+	virtual void render() {}
 
 protected:
 	void mouseDown(ImVec2 &location, Entity *bit);

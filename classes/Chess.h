@@ -1,6 +1,7 @@
 #pragma once
 #include "Game.h"
 #include "ChessSquare.h"
+#include "../imgui/imgui.h"
 
 const int pieceSize = 64;
 
@@ -60,6 +61,9 @@ public:
     void updateAI() override;
     bool gameHasAI() override { return true; }
 
+    bool isCheckmate(bool blackKing) const;
+    void promotePawn(int row, int col);
+
 private:
     Bit *PieceForPlayer(const int playerNumber, ChessPiece piece);
     const char bitToPieceNotation(int row, int column) const;
@@ -100,4 +104,19 @@ private:
     void updateCastlingRights(const Bit &piece, int fromRow, int fromCol);
 
     std::vector<std::pair<int, int>> getBasicLegalMoves(const Bit &piece, int srcRow, int srcCol, bool ignorePinned) const;
+
+    // 添加 GameStatus 结构体定义
+    struct GameStatus
+    {
+        bool showGameEndPopup = false;
+        bool showCheckPopup = false;
+        bool showCapturePopup = false;
+        std::string statusMessage;
+        float popupTimer = 0.0f;
+        const float POPUP_DURATION = 2.0f;
+    } _gameStatus;
+
+    // 添加 renderGameStatus 函数声明
+    void renderGameStatus();
+    void render() override; // 添加 render 函数声明
 };

@@ -75,3 +75,8 @@ set(CPACK_PROJECT_NAME ${PROJECT_NAME})
 set(CPACK_PROJECT_VERSION ${PROJECT_VERSION})
 
 include(CPack)
+
+include_directories(
+    ${PROJECT_SOURCE_DIR}/imgui
+    ${PROJECT_SOURCE_DIR}/classes
+)
