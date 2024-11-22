@@ -17,7 +17,21 @@ public:
 	Bit *bit() const;
 	Bit *bit();
 	// set the current piece
-	void setBit(Bit *bit);
+	void setBit(Bit *bit)
+	{
+		if (bit != _bit)
+		{
+			if (_bit && !bit && !_bit->getParent())
+			{
+				delete _bit;
+			}
+			_bit = bit;
+			if (_bit)
+			{
+				_bit->setParent(this);
+			}
+		}
+	}
 	// destroy the current piece, triggering any associated animations
 	void destroyBit();
 	// gametag can be used by games for any purpose

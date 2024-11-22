@@ -120,8 +120,57 @@ bool Chess::canBitMoveFromTo(Bit &bit, BitHolder &src, BitHolder &dst)
 
 void Chess::bitMovedFromTo(Bit &bit, BitHolder &src, BitHolder &dst)
 {
+    printf("Moving piece from src to dst\n");
+
+    // 获取源位置和目标位置
+    int srcRow = -1, srcCol = -1, dstRow = -1, dstCol = -1;
+    for (int row = 0; row < 8; row++)
+    {
+        for (int col = 0; col < 8; col++)
+        {
+            if (&_grid[row][col] == &src)
+            {
+                srcRow = row;
+                srcCol = col;
+            }
+            if (&_grid[row][col] == &dst)
+            {
+                dstRow = row;
+                dstCol = col;
+            }
+        }
+    }
+
+    printf("Move from [%d,%d] to [%d,%d]\n", srcRow, srcCol, dstRow, dstCol);
+
+    // 更新王车易位权限
+    updateCastlingRights(bit, srcRow, srcCol);
+
+    // 检查是否是王车易位
+    int pieceType = bit.gameTag() & 127;
+    if (pieceType == KING && abs(dstCol - srcCol) == 2)
+    {
+        printf("Performing castling\n");
+        bool isKingSide = dstCol > srcCol;
+        int rookSrcCol = isKingSide ? 7 : 0;
+        int rookDstCol = isKingSide ? dstCol - 1 : dstCol + 1;
+
+        // 移动车
+        Bit *rook = _grid[srcRow][rookSrcCol].bit();
+        if (rook)
+        {
+            printf("Moving rook from [%d,%d] to [%d,%d]\n",
+                   srcRow, rookSrcCol, srcRow, rookDstCol);
+            _grid[srcRow][rookDstCol].setBit(rook);
+            rook->setPosition(_grid[srcRow][rookDstCol].getPosition());
+            _grid[srcRow][rookSrcCol].setBit(nullptr);
+        }
+    }
+
+    printf("Completing move\n");
     Game::bitMovedFromTo(bit, src, dst);
-    _isWhiteTurn = !_isWhiteTurn; // 切换回合
+    _isWhiteTurn = !_isWhiteTurn;
+    printf("Turn changed to %s\n", _isWhiteTurn ? "White" : "Black");
     clearHighlights();
 }
 
@@ -355,7 +404,7 @@ bool Chess::isPieceBlocking(int startRow, int startCol, int endRow, int endCol) 
     return false;
 }
 
-std::vector<std::pair<int, int>> Chess::getLegalMoves(const Bit &piece, int srcRow, int srcCol) const
+std::vector<std::pair<int, int>> Chess::getBasicLegalMoves(const Bit &piece, int srcRow, int srcCol, bool ignorePinned) const
 {
     std::vector<std::pair<int, int>> moves;
     int pieceType = piece.gameTag() & 127;
@@ -526,25 +575,80 @@ std::vector<std::pair<int, int>> Chess::getLegalMoves(const Bit &piece, int srcR
             Bit *targetPiece = _grid[newRow][newCol].bit();
             if (!targetPiece || ((targetPiece->gameTag() & 128) != 0) != isBlack)
             {
-                // 检查移动后是否会被将军
-                bool isSafe = true;
-                // TODO: 实现检查目标格子是否安全的逻辑
-                if (isSafe)
-                {
-                    moves.push_back({newRow, newCol});
-                }
+                moves.push_back({newRow, newCol});
             }
         }
 
-        // TODO: 实现王车易位规则
-        // 需要检查:
-        // 1. 王和车都未移动过
-        // 2. 王不处于将军状态
-        // 3. 移动路径上无棋子
-        // 4. 移动路径上的格子不受对方攻击
-
+        // 移除王车易位检查，将其放到 getLegalMoves 中处理
         break;
     }
+    }
+
+    return moves;
+}
+
+bool Chess::isSquareUnderAttack(int row, int col, bool byBlack, bool checkKing) const
+{
+    for (int r = 0; r < 8; r++)
+    {
+        for (int c = 0; c < 8; c++)
+        {
+            Bit *piece = _grid[r][c].bit();
+            if (!piece)
+                continue;
+
+            // 如果不检查王的攻击，跳过王
+            if (!checkKing && (piece->gameTag() & 127) == KING)
+                continue;
+
+            if (((piece->gameTag() & 128) != 0) == byBlack)
+            {
+                // 只获取基本移动，避免递归
+                auto moves = getBasicLegalMoves(*piece, r, c, true);
+                if (std::find(moves.begin(), moves.end(),
+                              std::make_pair(row, col)) != moves.end())
+                {
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+std::vector<std::pair<int, int>> Chess::getLegalMoves(const Bit &piece, int srcRow, int srcCol) const
+{
+    printf("Getting legal moves for piece at [%d,%d]\n", srcRow, srcCol);
+    bool isBlack = (piece.gameTag() & 128) != 0;
+    int pieceType = piece.gameTag() & 127;
+
+    // 获取基本移动
+    auto moves = getBasicLegalMoves(piece, srcRow, srcCol, false);
+
+    // 如果是王，需要过滤掉不安全的移动
+    if (pieceType == KING)
+    {
+        moves.erase(
+            std::remove_if(moves.begin(), moves.end(),
+                           [this, isBlack](const std::pair<int, int> &move)
+                           {
+                               // 检查目标位置是否被攻击，不考虑对方王的攻击
+                               return isSquareUnderAttack(move.first, move.second, !isBlack, false);
+                           }),
+            moves.end());
+
+        // 在这里检查王车易位
+        if (!isInCheck(isBlack))
+        {
+            if (canCastle(true, isBlack))
+            {
+                moves.push_back({srcRow, srcCol + 2});
+            }
+            if (canCastle(false, isBlack))
+            {
+                moves.push_back({srcRow, srcCol - 2});
+            }
+        }
     }
 
     return moves;
@@ -591,6 +695,117 @@ void Chess::clearHighlights()
         for (int col = 0; col < 8; col++)
         {
             _grid[row][col].setMoveHighlighted(false);
+        }
+    }
+}
+
+std::pair<int, int> Chess::getKingPosition(bool blackKing) const
+{
+    for (int row = 0; row < 8; row++)
+    {
+        for (int col = 0; col < 8; col++)
+        {
+            Bit *piece = _grid[row][col].bit();
+            if (piece && (piece->gameTag() & 127) == KING &&
+                ((piece->gameTag() & 128) != 0) == blackKing)
+            {
+                return {row, col};
+            }
+        }
+    }
+    return {-1, -1}; // 不应该发生
+}
+
+bool Chess::isInCheck(bool blackKing) const
+{
+    auto [kingRow, kingCol] = getKingPosition(blackKing);
+    // 检查王是否被攻击，但不考虑对方王的攻击
+    return isSquareUnderAttack(kingRow, kingCol, !blackKing, false);
+}
+
+bool Chess::canCastle(bool kingSide, bool isBlack) const
+{
+    // 检查王和车是否移动过
+    if (isBlack)
+    {
+        if (_castlingRights.blackKingMoved)
+            return false;
+        if (kingSide && _castlingRights.blackRookKingside)
+            return false;
+        if (!kingSide && _castlingRights.blackRookQueenside)
+            return false;
+    }
+    else
+    {
+        if (_castlingRights.whiteKingMoved)
+            return false;
+        if (kingSide && _castlingRights.whiteRookKingside)
+            return false;
+        if (!kingSide && _castlingRights.whiteRookQueenside)
+            return false;
+    }
+
+    int row = isBlack ? 7 : 0;
+    int kingCol = 4;
+
+    // 检查王是否正在被将军
+    if (isInCheck(isBlack))
+        return false;
+
+    // 检查路径上是否有棋子
+    if (kingSide)
+    {
+        for (int col = 5; col < 7; col++)
+        {
+            if (_grid[row][col].bit() != nullptr)
+                return false;
+            // 检查路径上的格子是否被攻击
+            if (isSquareUnderAttack(row, col, !isBlack))
+                return false;
+        }
+    }
+    else
+    {
+        for (int col = 3; col > 0; col--)
+        {
+            if (_grid[row][col].bit() != nullptr)
+                return false;
+            // 检查路径上的格子是否被攻击
+            if (isSquareUnderAttack(row, col, !isBlack))
+                return false;
+        }
+    }
+
+    return true;
+}
+
+void Chess::updateCastlingRights(const Bit &piece, int fromRow, int fromCol)
+{
+    int pieceType = piece.gameTag() & 127;
+    bool isBlack = (piece.gameTag() & 128) != 0;
+
+    if (pieceType == KING)
+    {
+        if (isBlack)
+            _castlingRights.blackKingMoved = true;
+        else
+            _castlingRights.whiteKingMoved = true;
+    }
+    else if (pieceType == ROOK)
+    {
+        if (isBlack)
+        {
+            if (fromCol == 0)
+                _castlingRights.blackRookQueenside = true;
+            if (fromCol == 7)
+                _castlingRights.blackRookKingside = true;
+        }
+        else
+        {
+            if (fromCol == 0)
+                _castlingRights.whiteRookQueenside = true;
+            if (fromCol == 7)
+                _castlingRights.whiteRookKingside = true;
         }
     }
 }

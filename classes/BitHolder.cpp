@@ -22,23 +22,6 @@ Bit *BitHolder::bit()
 	return _bit;
 }
 
-void BitHolder::setBit(Bit *abit)
-{
-	if (abit != (void *)bit())
-	{
-		if (_bit)
-		{
-			delete _bit;
-			_bit = nullptr;
-		}
-		_bit = abit;
-		if (_bit)
-		{
-			_bit->setParent(this);
-		}
-	}
-}
-
 void BitHolder::destroyBit()
 {
 	if (_bit)

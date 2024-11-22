@@ -79,4 +79,25 @@ private:
     std::vector<std::pair<int, int>> getLegalMoves(const Bit &piece, int srcRow, int srcCol) const;
 
     bool _isWhiteTurn = true; // true = 白方回合, false = 黑方回合
+
+    // 将军检测相关
+    bool isSquareUnderAttack(int row, int col, bool byBlack, bool checkKing = true) const;
+    bool isInCheck(bool blackKing) const;
+    std::pair<int, int> getKingPosition(bool blackKing) const;
+
+    // 王车易位相关
+    struct CastlingRights
+    {
+        bool whiteKingMoved = false;
+        bool blackKingMoved = false;
+        bool whiteRookKingside = false;
+        bool whiteRookQueenside = false;
+        bool blackRookKingside = false;
+        bool blackRookQueenside = false;
+    } _castlingRights;
+
+    bool canCastle(bool kingSide, bool isBlack) const;
+    void updateCastlingRights(const Bit &piece, int fromRow, int fromCol);
+
+    std::vector<std::pair<int, int>> getBasicLegalMoves(const Bit &piece, int srcRow, int srcCol, bool ignorePinned) const;
 };
