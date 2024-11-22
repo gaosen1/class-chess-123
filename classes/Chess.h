@@ -66,6 +66,8 @@ public:
 
     void drawFrame() override;
 
+    void resetGame();
+
 private:
     Bit *PieceForPlayer(const int playerNumber, ChessPiece piece);
     const char bitToPieceNotation(int row, int column) const;
@@ -166,4 +168,11 @@ private:
         int pawnCol = -1;       // 可以被吃的兵的列
         bool available = false; // 是否有可以吃的过路兵
     } _enPassantState;
+
+    // AI 相关函数
+    std::pair<std::pair<int, int>, std::pair<int, int>> findBestMove(bool isBlack, int depth);
+    int minimax(int depth, bool isMaximizing, int alpha, int beta);
+    int evaluatePosition() const;
+    void makeMove(int fromRow, int fromCol, int toRow, int toCol);
+    void undoMove(int fromRow, int fromCol, int toRow, int toCol, Bit *capturedPiece);
 };

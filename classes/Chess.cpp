@@ -539,6 +539,162 @@ void Chess::setStateString(const std::string &s)
 //
 void Chess::updateAI()
 {
+    if (!_isWhiteTurn) // AI 控制黑方
+    {
+        // 使用 Minimax 算法找到最佳移动
+        auto [from, to] = findBestMove(true, 3); // 深度为3的搜索
+        int fromRow = from.first, fromCol = from.second;
+        int toRow = to.first, toCol = to.second;
+
+        // 执行 AI 的移动
+        if (fromRow != -1)
+        {
+            Bit *piece = _grid[fromRow][fromCol].bit();
+            if (piece)
+            {
+                BitHolder &src = _grid[fromRow][fromCol];
+                BitHolder &dst = _grid[toRow][toCol];
+
+                printf("\n=== AI Move ===\n");
+                printf("From: [%d,%d] To: [%d,%d]\n", fromRow, fromCol, toRow, toCol);
+
+                // 执行移动
+                bitMovedFromTo(*piece, src, dst);
+            }
+        }
+    }
+}
+
+int Chess::evaluatePosition() const
+{
+    int score = 0;
+    // 棋子价值
+    const int pieceValues[] = {0, 100, 320, 330, 500, 900, 20000}; // 对应 EMPTY, PAWN, KNIGHT, BISHOP, ROOK, QUEEN, KING
+
+    for (int row = 0; row < 8; row++)
+    {
+        for (int col = 0; col < 8; col++)
+        {
+            Bit *piece = _grid[row][col].bit();
+            if (piece)
+            {
+                int pieceType = piece->gameTag() & 127;
+                bool isBlack = (piece->gameTag() & 128) != 0;
+                int value = pieceValues[pieceType];
+
+                // 黑方为负分，白方为正分
+                score += isBlack ? -value : value;
+
+                // 位置加分（鼓励棋子控制中心）
+                int positionBonus = (4 - abs(col - 3.5)) + (4 - abs(row - 3.5));
+                score += isBlack ? -positionBonus : positionBonus;
+            }
+        }
+    }
+    return score;
+}
+
+std::pair<std::pair<int, int>, std::pair<int, int>> Chess::findBestMove(bool isBlack, int depth)
+{
+    int bestScore = isBlack ? INT_MAX : INT_MIN;
+    std::pair<int, int> bestFrom = {-1, -1};
+    std::pair<int, int> bestTo = {-1, -1};
+
+    // 遍历所有可能的移动
+    for (int fromRow = 0; fromRow < 8; fromRow++)
+    {
+        for (int fromCol = 0; fromCol < 8; fromCol++)
+        {
+            Bit *piece = _grid[fromRow][fromCol].bit();
+            if (!piece || ((piece->gameTag() & 128) != 0) != isBlack)
+                continue;
+
+            auto moves = getLegalMoves(*piece, fromRow, fromCol);
+            for (const auto &move : moves)
+            {
+                int toRow = move.first;
+                int toCol = move.second;
+
+                // 保存当前状态
+                Bit *capturedPiece = _grid[toRow][toCol].bit();
+
+                // 尝试移动
+                makeMove(fromRow, fromCol, toRow, toCol);
+
+                // 计算这个移动的分数
+                int score = minimax(depth - 1, !isBlack, INT_MIN, INT_MAX);
+
+                // 撤销移动
+                undoMove(fromRow, fromCol, toRow, toCol, capturedPiece);
+
+                // 更新最佳移动
+                if ((isBlack && score < bestScore) || (!isBlack && score > bestScore))
+                {
+                    bestScore = score;
+                    bestFrom = {fromRow, fromCol};
+                    bestTo = {toRow, toCol};
+                }
+            }
+        }
+    }
+    return {bestFrom, bestTo};
+}
+
+int Chess::minimax(int depth, bool isMaximizing, int alpha, int beta)
+{
+    if (depth == 0)
+        return evaluatePosition();
+
+    int bestScore = isMaximizing ? INT_MIN : INT_MAX;
+
+    for (int row = 0; row < 8; row++)
+    {
+        for (int col = 0; col < 8; col++)
+        {
+            Bit *piece = _grid[row][col].bit();
+            if (!piece || ((piece->gameTag() & 128) != 0) == isMaximizing)
+                continue;
+
+            auto moves = getLegalMoves(*piece, row, col);
+            for (const auto &move : moves)
+            {
+                Bit *capturedPiece = _grid[move.first][move.second].bit();
+
+                makeMove(row, col, move.first, move.second);
+                int score = minimax(depth - 1, !isMaximizing, alpha, beta);
+                undoMove(row, col, move.first, move.second, capturedPiece);
+
+                if (isMaximizing)
+                {
+                    bestScore = std::max(bestScore, score);
+                    alpha = std::max(alpha, bestScore);
+                }
+                else
+                {
+                    bestScore = std::min(bestScore, score);
+                    beta = std::min(beta, bestScore);
+                }
+
+                if (beta <= alpha)
+                    break;
+            }
+        }
+    }
+    return bestScore;
+}
+
+void Chess::makeMove(int fromRow, int fromCol, int toRow, int toCol)
+{
+    Bit *piece = _grid[fromRow][fromCol].bit();
+    _grid[toRow][toCol].setBit(piece);
+    _grid[fromRow][fromCol].setBit(nullptr);
+}
+
+void Chess::undoMove(int fromRow, int fromCol, int toRow, int toCol, Bit *capturedPiece)
+{
+    Bit *piece = _grid[toRow][toCol].bit();
+    _grid[fromRow][fromCol].setBit(piece);
+    _grid[toRow][toCol].setBit(capturedPiece);
 }
 
 void Chess::placePiece(int row, int col, PieceType type, PieceColor color)
@@ -879,14 +1035,18 @@ std::vector<std::pair<int, int>> Chess::getBasicLegalMoves(const Bit &piece, int
 
             Bit *targetPiece = _grid[newRow][newCol].bit();
 
-            // 检查目标位置是否有方棋子
+            // 检查目标位置是否有己方棋子
             if (targetPiece && ((targetPiece->gameTag() & 128) != 0) == isBlack)
-                continue;
+            {
+                continue; // 如果有己方棋子，跳过这个移动
+            }
 
             // 检查是否会与对方的王相邻
             auto [enemyKingRow, enemyKingCol] = getKingPosition(!isBlack);
             if (abs(enemyKingRow - newRow) <= 1 && abs(enemyKingCol - newCol) <= 1)
-                continue; // 允许两个王相
+            {
+                continue; // 不允许两个王相邻
+            }
 
             moves.push_back({newRow, newCol});
         }
@@ -1222,12 +1382,12 @@ void Chess::drawFrame()
     // 创建控制面板窗口
     ImGuiWindowFlags control_flags =
         ImGuiWindowFlags_NoDecoration |
-        ImGuiWindowFlags_AlwaysAutoResize |
-        ImGuiWindowFlags_NoSavedSettings |
-        ImGuiWindowFlags_NoFocusOnAppearing |
+        ImGuiWindowFlags_NoResize |
+        ImGuiWindowFlags_NoMove |
+        ImGuiWindowFlags_NoScrollbar |
         ImGuiWindowFlags_NoNav;
 
-    // 设置控制面板位置（在主窗口内）
+    // 设置控制面板位置
     ImVec2 control_pos = viewport->Pos;
     control_pos.x += 10;
     control_pos.y += 10;
@@ -1248,33 +1408,42 @@ void Chess::drawFrame()
     if (ImGui::Button("Reset Game", ImVec2(100, 30)))
     {
         printf("\n=== Game Reset ===\n");
+        resetGame();
+    }
 
-        // 重置游戏状态
-        _gameStatus.showGameEndPopup = false;
-        _isWhiteTurn = true;
-        _castlingRights = CastlingRights();
-        setupInitialPosition();
+    ImGui::SameLine();
+    ImGui::Separator();
+    ImGui::SameLine();
 
-        // 清除历史记录
-        for (auto &turn : _turns)
-        {
-            delete turn;
-        }
-        _turns.clear();
+    // 创建玩家对战按钮
+    if (ImGui::Button("Player vs Player", ImVec2(120, 30)))
+    {
+        printf("\n=== Starting Player vs Player Mode ===\n");
+        resetGame();
+        _gameOptions.AIPlayer = false;
+        _gameOptions.AIvsAI = false;
+    }
 
-        // 添加初始回合
-        Turn *turn = Turn::initStartOfGame(this);
-        _turns.push_back(turn);
+    ImGui::SameLine();
 
-        // 重置回合数
-        _gameOptions.currentTurnNo = 0;
+    // 创建人机对战按钮
+    if (ImGui::Button("Player vs AI", ImVec2(100, 30)))
+    {
+        printf("\n=== Starting Player vs AI Mode ===\n");
+        resetGame();
+        _gameOptions.AIPlayer = true; // AI 控制黑方
+        _gameOptions.AIvsAI = false;
+        setAIPlayer(1); // 设置黑方为 AI
     }
 
     // 恢复按钮样式
     ImGui::PopStyleColor(3);
 
-    // 添加当前回合信息
-    ImGui::SameLine(ImGui::GetWindowWidth() - 150);
+    // 添加当前回合和模式信息
+    float windowWidth = ImGui::GetWindowWidth();
+    ImGui::SameLine(windowWidth - 300);
+    ImGui::Text("Mode: %s", _gameOptions.AIPlayer ? "Player vs AI" : "Player vs Player");
+    ImGui::SameLine(windowWidth - 150);
     ImGui::Text("Turn: %s", _isWhiteTurn ? "White" : "Black");
 
     ImGui::End();
@@ -1287,6 +1456,30 @@ void Chess::drawFrame()
     {
         renderGameStatus();
     }
+}
+
+// 添加一个辅助函数来处理重置游戏的逻辑
+void Chess::resetGame()
+{
+    // 重置游戏状态
+    _gameStatus.showGameEndPopup = false;
+    _isWhiteTurn = true;
+    _castlingRights = CastlingRights();
+    setupInitialPosition();
+
+    // 清除历史记录
+    for (auto &turn : _turns)
+    {
+        delete turn;
+    }
+    _turns.clear();
+
+    // 添加初始回合
+    Turn *turn = Turn::initStartOfGame(this);
+    _turns.push_back(turn);
+
+    // 重置回合数
+    _gameOptions.currentTurnNo = 0;
 }
 
 void Chess::renderGameStatus()
