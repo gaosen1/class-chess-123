@@ -132,6 +132,18 @@ bool Chess::canBitMoveFromTo(Bit &bit, BitHolder &src, BitHolder &dst)
     // 获取目标位置的棋子
     Bit *targetPiece = _grid[dstRow][dstCol].bit();
 
+    // 检查是否要吃掉对方的王
+    if (targetPiece && (targetPiece->gameTag() & 127) == KING)
+    {
+        bool capturedBlackKing = (targetPiece->gameTag() & 128) != 0;
+        _lastMoveState.isKingCapture = true;
+        _lastMoveState.capturedBlackKing = capturedBlackKing;
+    }
+    else
+    {
+        _lastMoveState.isKingCapture = false;
+    }
+
     // 只在目标位置改变时才打印信息
     static int lastPrintedDstRow = -1;
     static int lastPrintedDstCol = -1;
@@ -257,6 +269,19 @@ bool Chess::canBitMoveFromTo(Bit &bit, BitHolder &src, BitHolder &dst)
 void Chess::bitMovedFromTo(Bit &bit, BitHolder &src, BitHolder &dst)
 {
     printf("\n=== Move Start ===\n");
+
+    // 如果这步移动吃掉了王，显示游戏结束窗口
+    if (_lastMoveState.isKingCapture)
+    {
+        printf("\n=== Game Over - King Captured ===\n");
+        printf("%s wins by capturing the %s king!\n",
+               _lastMoveState.capturedBlackKing ? "White" : "Black",
+               _lastMoveState.capturedBlackKing ? "Black" : "White");
+
+        _gameStatus.showGameEndPopup = true;
+        _gameStatus.statusMessage = std::string(_lastMoveState.capturedBlackKing ? "White" : "Black") +
+                                    " wins by capturing the king!";
+    }
 
     // 获取源位置和目标位置
     int srcRow = -1, srcCol = -1, dstRow = -1, dstCol = -1;

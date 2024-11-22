@@ -142,7 +142,11 @@ private:
     {
         Bit *targetPiece;
         bool isCapture;
-        LastMoveState() : targetPiece(nullptr), isCapture(false) {}
+        bool isKingCapture;
+        bool capturedBlackKing;
+
+        LastMoveState() : targetPiece(nullptr), isCapture(false),
+                          isKingCapture(false), capturedBlackKing(false) {}
     };
 
     // 添加成员变量
