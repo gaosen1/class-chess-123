@@ -566,7 +566,7 @@ std::vector<std::pair<int, int>> Chess::getBasicLegalMoves(const Bit &piece, int
     }
     case QUEEN:
     {
-        // 后的��动 - 合象和车的动
+        // 后的动 - 合象和车的动
         const int directions[8][2] = {
             {-1, -1}, {-1, 1}, {1, -1}, {1, 1}, // 斜线方向(象)
             {-1, 0},
@@ -620,54 +620,12 @@ std::vector<std::pair<int, int>> Chess::getBasicLegalMoves(const Bit &piece, int
             if (targetPiece && ((targetPiece->gameTag() & 128) != 0) == isBlack)
                 continue;
 
-            // 创建临时棋盘状态来检查移动的安全性
-            ChessSquare tempGrid[8][8];
-            for (int r = 0; r < 8; r++)
-            {
-                for (int c = 0; c < 8; c++)
-                {
-                    tempGrid[r][c] = _grid[r][c];
-                }
-            }
+            // 检查是否会与对方的王相邻
+            auto [enemyKingRow, enemyKingCol] = getKingPosition(!isBlack);
+            if (abs(enemyKingRow - newRow) <= 1 && abs(enemyKingCol - newCol) <= 1)
+                continue; // 不允许两个王相邻
 
-            // 在临时棋盘上模拟移动
-            tempGrid[srcRow][srcCol].setBit(nullptr);
-            tempGrid[newRow][newCol].setBit(nullptr);
-
-            // 检查新位置是否安全
-            bool isSafe = true;
-            for (int r = 0; r < 8; r++)
-            {
-                for (int c = 0; c < 8; c++)
-                {
-                    Bit *attackingPiece = tempGrid[r][c].bit();
-                    if (!attackingPiece)
-                        continue;
-
-                    // 如果是对方的棋子
-                    if (((attackingPiece->gameTag() & 128) != 0) != isBlack)
-                    {
-                        // 获取攻击棋子的基本移动（忽略王的移动以避免递归）
-                        if ((attackingPiece->gameTag() & 127) == KING)
-                            continue;
-
-                        auto attackingMoves = getBasicLegalMoves(*attackingPiece, r, c, true);
-                        if (std::find(attackingMoves.begin(), attackingMoves.end(),
-                                      std::make_pair(newRow, newCol)) != attackingMoves.end())
-                        {
-                            isSafe = false;
-                            break;
-                        }
-                    }
-                }
-                if (!isSafe)
-                    break;
-            }
-
-            if (isSafe)
-            {
-                moves.push_back({newRow, newCol});
-            }
+            moves.push_back({newRow, newCol});
         }
         break;
     }
@@ -678,6 +636,18 @@ std::vector<std::pair<int, int>> Chess::getBasicLegalMoves(const Bit &piece, int
 
 bool Chess::isSquareUnderAttack(int row, int col, bool byBlack, bool checkKing) const
 {
+    // 首先检查对方王的攻击范围（即使 checkKing 为 false）
+    auto [enemyKingRow, enemyKingCol] = getKingPosition(byBlack);
+    if (enemyKingRow != -1)
+    { // 如果找到了敌方的王
+        // 检查目标格子是否在敌方王的攻击范围内（相邻格子）
+        if (abs(enemyKingRow - row) <= 1 && abs(enemyKingCol - col) <= 1)
+        {
+            return true;
+        }
+    }
+
+    // 然后检查其他棋子的攻击
     for (int r = 0; r < 8; r++)
     {
         for (int c = 0; c < 8; c++)
@@ -686,19 +656,20 @@ bool Chess::isSquareUnderAttack(int row, int col, bool byBlack, bool checkKing) 
             if (!piece)
                 continue;
 
+            // 跳过己方棋子
+            if (((piece->gameTag() & 128) != 0) != byBlack)
+                continue;
+
             // 如果不检查王的攻击，跳过王
             if (!checkKing && (piece->gameTag() & 127) == KING)
                 continue;
 
-            if (((piece->gameTag() & 128) != 0) == byBlack)
+            // 获取基本移动，避免递归
+            auto moves = getBasicLegalMoves(*piece, r, c, true);
+            if (std::find(moves.begin(), moves.end(),
+                          std::make_pair(row, col)) != moves.end())
             {
-                // 只获取基本移动，避免递归
-                auto moves = getBasicLegalMoves(*piece, r, c, true);
-                if (std::find(moves.begin(), moves.end(),
-                              std::make_pair(row, col)) != moves.end())
-                {
-                    return true;
-                }
+                return true;
             }
         }
     }
