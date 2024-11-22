@@ -213,24 +213,36 @@ bool Chess::canBitMoveFromTo(Bit &bit, BitHolder &src, BitHolder &dst)
         if (_enPassantState.available)
         {
             int expectedRow = isBlack ? 3 : 4; // 吃过路兵的兵应该在的行
-            if (srcRow == expectedRow &&
-                abs(srcCol - _enPassantState.pawnCol) == 1 && // 在过路兵的左右
-                dstRow == (isBlack ? 2 : 5) &&                // 目标行正确
-                dstCol == _enPassantState.pawnCol)            // 目标列是过路兵的列
+
+            // 检查移动的兵是否在正确的行
+            if (srcRow == expectedRow)
             {
-                printf("\n=== En Passant Available ===\n");
-                printf("%s pawn can capture en passant at [%d,%d]\n",
-                       isBlack ? "Black" : "White",
-                       _enPassantState.pawnRow,
-                       _enPassantState.pawnCol);
-                return true;
+                // 检查是否是斜向移动到过路兵的位置
+                if (abs(srcCol - dstCol) == 1 &&
+                    dstCol == _enPassantState.pawnCol &&
+                    dstRow == (isBlack ? 2 : 5))
+                {
+                    // 确认目标位置是过路兵的位置
+                    Bit *targetPawn = _grid[srcRow][dstCol].bit(); // 注意：使用srcRow而不是dstRow
+                    if (targetPawn &&
+                        (targetPawn->gameTag() & 127) == PAWN &&
+                        ((targetPawn->gameTag() & 128) != 0) != isBlack)
+                    {
+                        printf("\n=== En Passant Available ===\n");
+                        printf("%s pawn at [%d,%d] can capture en passant at [%d,%d]\n",
+                               isBlack ? "Black" : "White",
+                               srcRow, srcCol,
+                               dstRow, dstCol);
+                        return true;
+                    }
+                }
             }
         }
 
-        // 记录双步移动的兵（为下一回合的吃过路兵做准备）
+        // 记录双步移动（为下一回合的吃过路兵做准备）
         if (abs(dstRow - srcRow) == 2)
         {
-            _enPassantState.pawnRow = dstRow;
+            _enPassantState.pawnRow = srcRow + (dstRow - srcRow) / 2; // 记录中间行
             _enPassantState.pawnCol = dstCol;
             _enPassantState.available = true;
             printf("\n=== En Passant Target Created ===\n");
@@ -268,47 +280,52 @@ void Chess::bitMovedFromTo(Bit &bit, BitHolder &src, BitHolder &dst)
     bool isBlack = (bit.gameTag() & 128) != 0;
     int pieceType = bit.gameTag() & 127;
 
-    // 使用保存的状态
-    Bit *targetPiece = _lastMoveState.targetPiece;
-    bool isCapture = _lastMoveState.isCapture;
-
-    printf("Moving %s %s from [%d,%d] to [%d,%d]\n",
-           isBlack ? "black" : "white",
-           pieceType == PAWN ? "pawn" : pieceType == KNIGHT ? "knight"
-                                    : pieceType == BISHOP   ? "bishop"
-                                    : pieceType == ROOK     ? "rook"
-                                    : pieceType == QUEEN    ? "queen"
-                                    : pieceType == KING     ? "king"
-                                                            : "unknown",
-           srcRow, srcCol, dstRow, dstCol);
-
-    if (isCapture)
+    // 检查是否是吃过路兵的情况
+    if (pieceType == PAWN)
     {
-        int capturedType = targetPiece->gameTag() & 127;
-        printf("Capturing %s %s\n",
-               ((targetPiece->gameTag() & 128) != 0) ? "black" : "white",
-               capturedType == PAWN ? "pawn" : capturedType == KNIGHT ? "knight"
-                                           : capturedType == BISHOP   ? "bishop"
-                                           : capturedType == ROOK     ? "rook"
-                                           : capturedType == QUEEN    ? "queen"
-                                           : capturedType == KING     ? "king"
-                                                                      : "unknown");
-
-        if (capturedType == KING)
+        // 检查是否是吃过路兵的移动
+        if (_enPassantState.available &&
+            abs(srcCol - dstCol) == 1 &&         // 斜向移动
+            dstCol == _enPassantState.pawnCol && // 目标列是过路兵的列
+            ((isBlack && srcRow == 3 && dstRow == 2) ||
+             (!isBlack && srcRow == 4 && dstRow == 5))) // 正确的行
         {
-            printf("\n=== Game Over ===\n");
-            printf("King captured! %s wins!\n", isBlack ? "Black" : "White");
-            _gameStatus.showGameEndPopup = true;
-            _gameStatus.statusMessage = std::string(isBlack ? "Black" : "White") +
-                                        " wins by capturing the " +
-                                        std::string(!isBlack ? "Black" : "White") +
-                                        " King!";
-            _isWhiteTurn = !_isWhiteTurn;
-            return;
+            // 移除被吃掉的过路兵（在原来的行）
+            Bit *capturedPawn = _grid[srcRow][dstCol].bit();
+            if (capturedPawn)
+            {
+                printf("\n=== En Passant Capture ===\n");
+                printf("%s pawn at [%d,%d] captured en passant at [%d,%d]\n",
+                       isBlack ? "Black" : "White",
+                       srcRow, srcCol,
+                       srcRow, dstCol);
+
+                // 先移除被吃的兵
+                _grid[srcRow][dstCol].setBit(nullptr);
+                delete capturedPawn;
+            }
+        }
+
+        // 检查是否是双步移动（为下一回合的吃过路兵做准备）
+        if (abs(dstRow - srcRow) == 2)
+        {
+            _enPassantState.pawnRow = srcRow + (dstRow - srcRow) / 2;
+            _enPassantState.pawnCol = dstCol;
+            _enPassantState.available = true;
+            printf("\n=== En Passant Target Created ===\n");
+            printf("Pawn at [%d,%d] can be captured en passant next turn\n",
+                   dstRow, dstCol);
+        }
+        else
+        {
+            // 如果不是双步移动，重置吃过路兵状态
+            _enPassantState.available = false;
+            _enPassantState.pawnRow = -1;
+            _enPassantState.pawnCol = -1;
         }
     }
 
-    // 先执行王的移动
+    // 执行正常的移动
     dst.setBit(&bit);
     bit.setPosition(dst.getPosition());
 
@@ -356,31 +373,12 @@ void Chess::bitMovedFromTo(Bit &bit, BitHolder &src, BitHolder &dst)
         printf("=== Castling Completed ===\n");
     }
 
-    // 处理吃过路兵
-    if (pieceType == PAWN &&
-        _enPassantState.available &&
-        dstCol == _enPassantState.pawnCol &&
-        srcRow == (isBlack ? 3 : 4) &&
-        dstRow == (isBlack ? 2 : 5))
+    // 重置吃过路兵状态（在回合结束时）
+    if (!_enPassantState.available)
     {
-        // 移除被吃掉的过路兵
-        Bit *capturedPawn = _grid[srcRow][dstCol].bit();
-        if (capturedPawn)
-        {
-            printf("\n=== En Passant Capture ===\n");
-            printf("%s pawn captured en passant at [%d,%d]\n",
-                   isBlack ? "Black" : "White",
-                   srcRow, dstCol);
-
-            _grid[srcRow][dstCol].setBit(nullptr);
-            delete capturedPawn;
-        }
+        _enPassantState.pawnRow = -1;
+        _enPassantState.pawnCol = -1;
     }
-
-    // 重置吃过路兵状态（每回合后都要重置）
-    _enPassantState.available = false;
-    _enPassantState.pawnRow = -1;
-    _enPassantState.pawnCol = -1;
 
     // 切换回合
     _isWhiteTurn = !_isWhiteTurn;
@@ -730,11 +728,21 @@ std::vector<std::pair<int, int>> Chess::getBasicLegalMoves(const Bit &piece, int
                 if (_enPassantState.available)
                 {
                     int expectedRow = isBlack ? 3 : 4; // 吃过路兵的兵应该在的行
-                    if (srcRow == expectedRow &&
-                        newCol == _enPassantState.pawnCol) // 目标列是过路兵的列
+                    if (srcRow == expectedRow)         // 确保兵在正确的行
                     {
-                        moves.push_back({newRow, newCol}); // 添加吃过路兵的移动
-                        printf("En passant move available at [%d,%d]\n", newRow, newCol);
+                        // 检查左右两个方向
+                        for (int dc : {-1, 1})
+                        {
+                            int newCol = srcCol + dc;
+                            if (isValidPosition(srcRow, newCol) &&
+                                newCol == _enPassantState.pawnCol) // 目标列是过路兵的列
+                            {
+                                // 添加吃过路兵的目标位置
+                                moves.push_back({isBlack ? 2 : 5, newCol});
+                                printf("En passant move available from [%d,%d] to [%d,%d]\n",
+                                       srcRow, srcCol, isBlack ? 2 : 5, newCol);
+                            }
+                        }
                     }
                 }
             }
