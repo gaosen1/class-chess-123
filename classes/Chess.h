@@ -68,6 +68,10 @@ public:
 
     void resetGame();
 
+    // FEN字符串支持
+    void FENtoBoard(const std::string &fen);
+    std::string BoardtoFEN() const;
+
 private:
     Bit *PieceForPlayer(const int playerNumber, ChessPiece piece);
     const char bitToPieceNotation(int row, int column) const;
@@ -179,4 +183,9 @@ private:
     int evaluatePosition() const;
     void makeMove(int fromRow, int fromCol, int toRow, int toCol);
     void undoMove(int fromRow, int fromCol, int toRow, int toCol, Bit *capturedPiece);
+
+    // FEN相关的辅助函数
+    void clearBoard();
+    void placePieceFromFEN(char piece, int row, int col);
+    char getPieceFENChar(const Bit *piece) const;
 };

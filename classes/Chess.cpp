@@ -1548,12 +1548,13 @@ void Chess::drawFrame()
     control_pos.y += 10;
 
     ImGui::SetNextWindowPos(control_pos);
-    ImGui::SetNextWindowSize(ImVec2(viewport->Size.x - 20, 50));
+    ImGui::SetNextWindowSize(ImVec2(viewport->Size.x - 20, 80)); // 增加窗口高度以容纳FEN输入
     ImGui::SetNextWindowViewport(viewport->ID);
 
     // 开始控制面板窗口
     ImGui::Begin("##Controls", nullptr, control_flags);
 
+    // 第一行：按钮
     // 设置按钮样式
     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.3f, 0.8f, 0.7f));
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.4f, 0.9f, 0.7f));
@@ -1600,6 +1601,37 @@ void Chess::drawFrame()
     ImGui::Text("Mode: %s", _gameOptions.AIPlayer ? "Player vs AI" : "Player vs Player");
     ImGui::SameLine(windowWidth - 150);
     ImGui::Text("Turn: %s", _isWhiteTurn ? "White" : "Black");
+
+    // 第二行：FEN输入
+    ImGui::Spacing();
+    static char fenInput[128] = ""; // 静态缓冲区存储FEN字符串
+
+    // 调整输入框和按钮的宽度和布局
+    float buttonWidth = 100;
+    float spacing = 10;
+    float inputWidth = windowWidth - 2 * buttonWidth - 2 * spacing - 40; // 40是一些边距
+
+    ImGui::PushItemWidth(inputWidth);
+    ImGui::InputText("FEN", fenInput, IM_ARRAYSIZE(fenInput));
+    ImGui::PopItemWidth();
+
+    ImGui::SameLine(0, spacing);
+    if (ImGui::Button("Load Position", ImVec2(buttonWidth, 0)))
+    {
+        if (strlen(fenInput) > 0)
+        {
+            printf("\n=== Loading FEN Position ===\n%s\n", fenInput);
+            FENtoBoard(fenInput);
+        }
+    }
+
+    ImGui::SameLine(0, spacing);
+    if (ImGui::Button("Copy FEN", ImVec2(buttonWidth, 0)))
+    {
+        std::string currentFEN = BoardtoFEN();
+        ImGui::SetClipboardText(currentFEN.c_str());
+        printf("\n=== FEN Copied to Clipboard ===\n%s\n", currentFEN.c_str());
+    }
 
     ImGui::End();
 
@@ -1766,4 +1798,217 @@ bool Chess::gameHasAI()
 {
     // 如果是 AI 模式且当前是黑方回合，返回 true
     return _gameOptions.AIPlayer && !_isWhiteTurn;
+}
+
+void Chess::FENtoBoard(const std::string &fen)
+{
+    // 清空当前棋盘
+    clearBoard();
+
+    std::istringstream ss(fen);
+    std::string boardPos, activeColor, castling, enPassant, halfmove, fullmove;
+    ss >> boardPos >> activeColor >> castling >> enPassant >> halfmove >> fullmove;
+
+    // 1. 解析棋盘布局
+    int row = 7, col = 0; // FEN从第8行开始
+    for (char c : boardPos)
+    {
+        if (c == '/')
+        {
+            row--;
+            col = 0;
+        }
+        else if (isdigit(c))
+        {
+            col += c - '0';
+        }
+        else
+        {
+            placePieceFromFEN(c, row, col);
+            col++;
+        }
+    }
+
+    // 2. 设置当前行动方
+    _isWhiteTurn = (activeColor == "w");
+
+    // 3. 设置王车易位权限
+    _castlingRights = CastlingRights();
+    for (char c : castling)
+    {
+        switch (c)
+        {
+        case 'K':
+            _castlingRights.whiteRookKingside = false;
+            break;
+        case 'Q':
+            _castlingRights.whiteRookQueenside = false;
+            break;
+        case 'k':
+            _castlingRights.blackRookKingside = false;
+            break;
+        case 'q':
+            _castlingRights.blackRookQueenside = false;
+            break;
+        }
+    }
+
+    // 4. 设置吃过路兵状态
+    _enPassantState.available = (enPassant != "-");
+    if (_enPassantState.available)
+    {
+        _enPassantState.pawnCol = enPassant[0] - 'a';
+        _enPassantState.pawnRow = enPassant[1] - '1';
+    }
+}
+
+std::string Chess::BoardtoFEN() const
+{
+    std::stringstream fen;
+
+    // 1. 棋盘布局
+    for (int row = 7; row >= 0; row--)
+    {
+        int emptyCount = 0;
+        for (int col = 0; col < 8; col++)
+        {
+            const Bit *piece = _grid[row][col].bit();
+            if (piece)
+            {
+                if (emptyCount > 0)
+                {
+                    fen << emptyCount;
+                    emptyCount = 0;
+                }
+                fen << getPieceFENChar(piece);
+            }
+            else
+            {
+                emptyCount++;
+            }
+        }
+        if (emptyCount > 0)
+        {
+            fen << emptyCount;
+        }
+        if (row > 0)
+            fen << '/';
+    }
+
+    // 2. 当前行动方
+    fen << ' ' << (_isWhiteTurn ? 'w' : 'b');
+
+    // 3. 王车易位权限
+    fen << ' ';
+    std::string castling;
+    if (!_castlingRights.whiteRookKingside)
+        castling += 'K';
+    if (!_castlingRights.whiteRookQueenside)
+        castling += 'Q';
+    if (!_castlingRights.blackRookKingside)
+        castling += 'k';
+    if (!_castlingRights.blackRookQueenside)
+        castling += 'q';
+    fen << (castling.empty() ? "-" : castling);
+
+    // 4. 吃过路兵目标格
+    fen << ' ';
+    if (_enPassantState.available)
+    {
+        fen << (char)('a' + _enPassantState.pawnCol)
+            << (char)('1' + _enPassantState.pawnRow);
+    }
+    else
+    {
+        fen << '-';
+    }
+
+    // 5. 半回合数和全回合数（暂时固定为0 1）
+    fen << " 0 1";
+
+    return fen.str();
+}
+
+void Chess::clearBoard()
+{
+    for (int row = 0; row < 8; row++)
+    {
+        for (int col = 0; col < 8; col++)
+        {
+            if (_grid[row][col].bit())
+            {
+                _grid[row][col].destroyBit();
+            }
+            _grid[row][col].setBit(nullptr);
+        }
+    }
+}
+
+void Chess::placePieceFromFEN(char piece, int row, int col)
+{
+    bool isBlack = islower(piece);
+    piece = toupper(piece);
+
+    PieceType type;
+    switch (piece)
+    {
+    case 'P':
+        type = PAWN;
+        break;
+    case 'N':
+        type = KNIGHT;
+        break;
+    case 'B':
+        type = BISHOP;
+        break;
+    case 'R':
+        type = ROOK;
+        break;
+    case 'Q':
+        type = QUEEN;
+        break;
+    case 'K':
+        type = KING;
+        break;
+    default:
+        return;
+    }
+
+    placePiece(row, col, type, isBlack ? BLACK : WHITE);
+}
+
+char Chess::getPieceFENChar(const Bit *piece) const
+{
+    if (!piece)
+        return '1';
+
+    int type = piece->gameTag() & 127;
+    bool isBlack = (piece->gameTag() & 128) != 0;
+
+    char c;
+    switch (type)
+    {
+    case PAWN:
+        c = 'P';
+        break;
+    case KNIGHT:
+        c = 'N';
+        break;
+    case BISHOP:
+        c = 'B';
+        break;
+    case ROOK:
+        c = 'R';
+        break;
+    case QUEEN:
+        c = 'Q';
+        break;
+    case KING:
+        c = 'K';
+        break;
+    default:
+        return '1';
+    }
+
+    return isBlack ? tolower(c) : c;
 }
