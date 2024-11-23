@@ -354,6 +354,34 @@ void Chess::bitMovedFromTo(Bit &bit, BitHolder &src, BitHolder &dst)
     dst.setBit(&bit);
     bit.setPosition(dst.getPosition());
 
+    // 检查兵升变
+    if (pieceType == PAWN)
+    {
+        // 获取目标位置
+        int dstRow = -1, dstCol = -1;
+        for (int row = 0; row < 8; row++)
+        {
+            for (int col = 0; col < 8; col++)
+            {
+                if (&_grid[row][col] == &dst)
+                {
+                    dstRow = row;
+                    dstCol = col;
+                    break;
+                }
+            }
+        }
+
+        // 检查是否到达底线
+        if ((isBlack && dstRow == 0) || (!isBlack && dstRow == 7))
+        {
+            _promotionState.inProgress = true;
+            _promotionState.row = dstRow;
+            _promotionState.col = dstCol;
+            _promotionState.isBlack = isBlack;
+        }
+    }
+
     // 然后处理王车易位
     if (_castlingState.inProgress)
     {
@@ -1644,6 +1672,12 @@ void Chess::drawFrame()
         updateAI();
     }
 
+    // 在渲染游戏状态弹窗之前检查是否需要显示升变对话框
+    if (_promotionState.inProgress)
+    {
+        showPromotionDialog();
+    }
+
     // 渲染游戏状态弹窗
     if (_gameStatus.showGameEndPopup)
     {
@@ -2011,4 +2045,60 @@ char Chess::getPieceFENChar(const Bit *piece) const
     }
 
     return isBlack ? tolower(c) : c;
+}
+
+void Chess::showPromotionDialog()
+{
+    ImGui::OpenPopup("Promote Pawn");
+
+    ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+    ImGui::SetNextWindowPos(center, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+
+    if (ImGui::BeginPopupModal("Promote Pawn", nullptr,
+                               ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove))
+    {
+        ImGui::Text("Choose piece to promote to:");
+        ImGui::Separator();
+
+        const char *pieces[] = {"Queen", "Rook", "Bishop", "Knight"};
+        PieceType types[] = {QUEEN, ROOK, BISHOP, KNIGHT};
+
+        for (int i = 0; i < 4; i++)
+        {
+            if (ImGui::Button(pieces[i], ImVec2(120, 30)))
+            {
+                promotePawnTo(_promotionState.row, _promotionState.col, types[i]);
+                _promotionState.inProgress = false;
+                ImGui::CloseCurrentPopup();
+            }
+            if (i < 3)
+                ImGui::SameLine();
+        }
+
+        ImGui::EndPopup();
+    }
+}
+
+void Chess::promotePawnTo(int row, int col, PieceType type)
+{
+    Bit *pawn = _grid[row][col].bit();
+    if (!pawn || (pawn->gameTag() & 127) != PAWN)
+        return;
+
+    bool isBlack = (pawn->gameTag() & 128) != 0;
+
+    // 移除原来的兵
+    _grid[row][col].setBit(nullptr);
+    delete pawn;
+
+    // 放置新的棋子
+    placePiece(row, col, type, isBlack ? BLACK : WHITE);
+
+    printf("\n=== Pawn Promotion ===\n");
+    printf("%s pawn promoted to %s at [%d,%d]\n",
+           isBlack ? "Black" : "White",
+           type == QUEEN ? "Queen" : type == ROOK ? "Rook"
+                                 : type == BISHOP ? "Bishop"
+                                                  : "Knight",
+           row, col);
 }

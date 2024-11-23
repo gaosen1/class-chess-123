@@ -188,4 +188,18 @@ private:
     void clearBoard();
     void placePieceFromFEN(char piece, int row, int col);
     char getPieceFENChar(const Bit *piece) const;
+
+    // 添加兵升变状态结构体
+    struct PawnPromotionState
+    {
+        bool inProgress = false;
+        int row = -1;
+        int col = -1;
+        bool isBlack = false;
+    } _promotionState;
+
+    // 添加兵升变相关函数
+    void checkPawnPromotion(int row, int col);
+    void showPromotionDialog();
+    void promotePawnTo(int row, int col, PieceType type);
 };
